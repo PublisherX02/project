@@ -1,6 +1,8 @@
 import random
 from typing import List, Dict, Any
 from langchain.tools import tool
+import requests
+import json
 
 class InsuranceDatabase:
     """
@@ -17,15 +19,8 @@ class InsuranceDatabase:
 
     def file_claim(self, user_id: str, policy_type: str, amount: float) -> str:
         """
-        Simulates filing an insurance claim.
-        
-        Args:
-            user_id (str): The ID of the user filing the claim.
-            policy_type (str): The type of policy (e.g., 'Motor', 'Home').
-            amount (float): The amount claimed.
-            
-        Returns:
-            str: Status message with claim ID or review requirement.
+        Simulates filing an insurance claim internally (Legacy/Fallback).
+        Now primarily used by the Secure API, not directly by the tool.
         """
         if user_id not in self.users:
             return f"❌ User {user_id} not found in database."
@@ -73,7 +68,44 @@ def file_claim_tool(user_id: str, policy_type: str, amount: float) -> str:
     Requires user_id (str), policy_type (str), and amount (float).
     Returns the claim status and ID.
     """
-    return db.file_claim(user_id, policy_type, amount)
+    # Define the API endpoint
+    api_url = "http://localhost:8000/api/secure_claim"
+    
+    # Define the headers with the security token
+    headers = {
+        "Content-Type": "application/json",
+        "X-Token": "Imani_Secure_2026"
+    }
+    
+    # Create the payload
+    payload = {
+        "user_id": user_id,
+        "policy_type": policy_type,
+        "amount": amount
+    }
+    
+    try:
+        # Make the POST request to the secure API
+        response = requests.post(api_url, headers=headers, json=payload)
+        
+        # Check if the request was successful
+        if response.status_code == 200:
+            response_data = response.json()
+            return f"✅ {response_data['message']} Claim ID: {response_data['claim_id']}"
+            
+        elif response.status_code == 401:
+            return "🚨 Security System Blocked Request: Unauthorized Access (Invalid Token)."
+            
+        elif response.status_code == 422:
+            return f"🚨 Security System Blocked Request: Validation Error. Please check your inputs (Amount limit: 50,000). Details: {response.text}"
+            
+        else:
+            return f"❌ Error filing claim. Server returned status {response.status_code}: {response.text}"
+            
+    except requests.exceptions.ConnectionError:
+        return "❌ Error: Could not connect to the Secure API Gateway. Is the security_api.py server running?"
+    except Exception as e:
+        return f"❌ Unexpected Error: {str(e)}"
 
 @tool
 def check_policy_tool(user_id: str) -> str:

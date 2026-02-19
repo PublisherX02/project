@@ -9,3 +9,6 @@ sentence-transformers
 python-dotenv
 pypdf
 streamlit
+fastapi
+uvicorn
+requests

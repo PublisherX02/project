@@ -8,37 +8,45 @@ st.set_page_config(
     layout="centered"
 )
 
-# Custom CSS for WhatsApp-like styling
+# Custom CSS for WhatsApp-like styling (Dark-Mode Proof)
 st.markdown("""
 <style>
-    /* Main Background */
-    .stApp {
-        background-color: #ECE5DD;
+    /* Force WhatsApp beige background */
+    .stApp, .main {
+        background-color: #e5ddd5 !important;
     }
     
-    /* Chat Message Styling */
+    /* Make all chat text Dark/Black */
+    .stChatMessage p, .stChatMessage div {
+        color: #111111 !important;
+    }
+
+    /* Style the chat bubbles */
     .stChatMessage {
-        padding: 1rem;
-        border-radius: 10px;
-        margin-bottom: 10px;
+        padding: 1rem !important;
+        border-radius: 10px !important;
+        margin-bottom: 10px !important;
+        border: 1px solid #d1d1d1 !important;
     }
     
-    /* User Message (Green) */
-    .stChatMessage[data-testid="stChatMessage"]:nth-child(odd) {
-        background-color: #DCF8C6;
-        border-top-right-radius: 0;
+    /* User Message Bubble (Green) */
+    [data-testid="stChatMessage"]:nth-child(odd) {
+        background-color: #dcf8c6 !important;
+        border-top-right-radius: 0 !important;
+        margin-left: 20%; /* Push user messages to the right */
     }
     
-    /* Assistant Message (White) */
-    .stChatMessage[data-testid="stChatMessage"]:nth-child(even) {
-        background-color: #FFFFFF;
-        border-top-left-radius: 0;
+    /* Assistant Message Bubble (White) */
+    [data-testid="stChatMessage"]:nth-child(even) {
+        background-color: #ffffff !important;
+        border-top-left-radius: 0 !important;
+        margin-right: 20%; /* Push bot messages to the left */
     }
     
-    /* Input Box Styling */
-    .stChatInput {
-        background-color: #FFFFFF;
-        border-radius: 20px;
+    /* Fix Input Box */
+    .stChatInputContainer {
+        background-color: #ffffff !important;
+        border-radius: 20px !important;
     }
 </style>
 """, unsafe_allow_html=True)

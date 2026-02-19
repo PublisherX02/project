@@ -188,6 +188,7 @@ If 'Moroccan (Darija)', use 'Zaf', 'Diali', 'Wakha'.
 
 Keep the tone empathetic and local. Base your answers on this context: {context}.
 If the user asks about specific account actions (filing claims, checking policies), USE THE TOOLS provided.
+If the user greets you ("Ahla", "Hello") or asks a general question, DO NOT use tools. Go straight to Final Answer.
 
 You have access to the following tools:
 
@@ -212,12 +213,11 @@ Thought: {agent_scratchpad}
 
 agent_prompt = PromptTemplate(
     template=agent_prompt_template,
-    input_variables=["input", "agent_scratchpad"],
+    # Move 'language' and 'context' to input_variables!
+    input_variables=["input", "agent_scratchpad", "language", "context"],
     partial_variables={
         "tools": "\n".join([f"{tool.name}: {tool.description}" for tool in tools]),
-        "tool_names": ", ".join([tool.name for tool in tools]),
-        "language": "English", # Default fallback, should be overridden in invoke
-        "context": "No context provided" # Default fallback
+        "tool_names": ", ".join([tool.name for tool in tools])
     }
 )
 
@@ -231,7 +231,8 @@ agent = create_react_agent(
 # Create memory
 memory = ConversationBufferMemory(
     memory_key="chat_history",
-    return_messages=True
+    return_messages=True,
+    input_key="input"
 )
 
 # Create agent executor
@@ -241,7 +242,7 @@ agent_executor = AgentExecutor(
     memory=memory,
     verbose=True,
     handle_parsing_errors=True,
-    max_iterations=5
+    max_iterations=10
 )
 
 

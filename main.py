@@ -16,6 +16,7 @@ from langchain.schema import Document
 from langchain.agents import AgentExecutor, create_react_agent, Tool
 from langchain.memory import ConversationBufferMemory
 from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
+from agent_tools import insurance_tools
 
 # Load environment variables
 load_dotenv()
@@ -174,19 +175,19 @@ def query_rag(question: str) -> Dict[str, Any]:
 
 #agents config
 #name a dictionary named tools containing each tool
-tools = [] # Placeholder: Tools will be defined later
+tools = insurance_tools
 
 
 agent_prompt_template = """
-You are a helpful Insurance assistant with access to various tools. 
-You can help customers with account information, transfers, Insurance policies, and general banking questions.
+You are 'Imani', a trusted insurance guide for the North African market. 
+You must answer the user's question strictly in this language/dialect: {language}.
 
-IMPORTANT:
-- Always verify account IDs before performing operations
-- For Money transactions, confirm the amount and accounts before executing
-- Be clear and professional in all responses
-- Use the KnowledgeBase tool for general Insurance questions
-- Use specific tools for account operations
+If the language is 'Tunisian Arabic (Tounsi)', use Latin letters (Arabizi) or Arabic script, mix heavily with French, and use words like 'Barcha', 'Fama', 'Behi', and 'Aychou'.
+If 'Algerian (Dziri)', use words like 'Wesh', 'Bzaf', 'Draham'.
+If 'Moroccan (Darija)', use 'Zaf', 'Diali', 'Wakha'.
+
+Keep the tone empathetic and local. Base your answers on this context: {context}.
+If the user asks about specific account actions (filing claims, checking policies), USE THE TOOLS provided.
 
 You have access to the following tools:
 
@@ -201,7 +202,7 @@ Action Input: the input to the action
 Observation: the result of the action
 ... (this Thought/Action/Action Input/Observation can repeat N times)
 Thought: I now know the final answer
-Final Answer: the final answer to the original input question
+Final Answer: the final answer to the original input question in the requested dialect ({language}).
 
 Begin!
 
@@ -214,7 +215,9 @@ agent_prompt = PromptTemplate(
     input_variables=["input", "agent_scratchpad"],
     partial_variables={
         "tools": "\n".join([f"{tool.name}: {tool.description}" for tool in tools]),
-        "tool_names": ", ".join([tool.name for tool in tools])
+        "tool_names": ", ".join([tool.name for tool in tools]),
+        "language": "English", # Default fallback, should be overridden in invoke
+        "context": "No context provided" # Default fallback
     }
 )
 
@@ -250,13 +253,14 @@ class InsuranceChatbot:
         self.rag_chain = rag_chain
         self.conversation_history = []
     
-    def chat(self, user_input: str, use_agent: bool = True) -> Dict[str, Any]:
+    def chat(self, user_input: str, language: str = "Tunisian Arabic (Tounsi)", use_agent: bool = True) -> Dict[str, Any]:
         """
         Main chat interface
         
         Args:
             user_input: User's question or request
-            use_agent: If True, use agent for complex tasks; if False, use RAG only
+            language: Target language/dialect for the response
+            use_agent: If True, use agent for complex tasks
         
         Returns:
             Dictionary with response and metadata
@@ -264,15 +268,22 @@ class InsuranceChatbot:
         timestamp = datetime.now().isoformat()
         
         try:
+            # Get Context from RAG (always useful for the agent prompt context variable)
+            rag_result = query_rag(user_input)
+            context = rag_result["answer"] if rag_result else "No relevant documents found."
+            
             if use_agent:
                 # Use agent for complex operations
-                response = self.agent_executor.invoke({"input": user_input})
+                response = self.agent_executor.invoke({
+                    "input": user_input,
+                    "language": language,
+                    "context": context
+                })
                 answer = response["output"]
                 mode = "agent"
             else:
-                # Use RAG for simple Q&A
-                response = query_rag(user_input)
-                answer = response["answer"]
+                # Use RAG for simple Q&A (fallback or direct) - using context directly
+                answer = context
                 mode = "rag"
             
             # Store in conversation history

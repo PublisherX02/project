@@ -12,3 +12,5 @@ streamlit
 fastapi
 uvicorn
 requests
+pyngrok
+PyJWT

@@ -1,19 +1,31 @@
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from pydantic import BaseModel, Field, validator
 import uvicorn
-import re
+import jwt
+from datetime import datetime
+import time
 
-app = FastAPI(title="Imani Secure - Insurance API Gateway")
+app = FastAPI(title="OLEA Secure - Enterprise API Gateway")
 
-# --- Security Dependency ---
+# --- Enterprise Security Config ---
+SECRET_KEY = "OLEA_HACKATHON_SUPER_SECRET_2026"
+request_tracker = {}  # Memory-based rate limiter
+
+# --- Security Dependency (JWT) ---
 def verify_token(x_token: str = Header(...)):
-    """
-    Validates the 'x-token' header.
-    If the token does not match the secure key, raises 401 Unauthorized.
-    """
-    if x_token != "Imani_Secure_2026":
-        raise HTTPException(status_code=401, detail="Unauthorized: Invalid Security Token")
-    return x_token
+    """Validates dynamic, expiring JWT tokens."""
+    try:
+        # Decode the token
+        payload = jwt.decode(x_token, SECRET_KEY, algorithms=["HS256"])
+        
+        # Check if the token has expired
+        if payload["exp"] < datetime.utcnow().timestamp():
+            raise HTTPException(status_code=401, detail="Security Alert: Token Expired. Possible Replay Attack blocked.")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Security Alert: Token Expired.")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Security Alert: Invalid Token Signature.")
 
 # --- Data Validation Models ---
 class ClaimRequest(BaseModel):
@@ -32,32 +44,34 @@ class ClaimRequest(BaseModel):
 
 # --- Endpoints ---
 @app.post("/api/secure_claim", dependencies=[Depends(verify_token)])
-async def submit_secure_claim(request: ClaimRequest):
-    """
-    Secure endpoint to submit an insurance claim.
-    Requires:
-    - Valid 'x-token' header.
-    - Valid JSON payload complying with 'ClaimRequest' schema.
-    """
+async def submit_secure_claim(request: ClaimRequest, raw_request: Request):
+    """Secure endpoint with Rate Limiting and JWT."""
     
-    # Process the verified claim
-    # In a real system, this would call the backend service or DB.
-    # For now, we return the dummy success response.
+    # 1. ANTI-DDOS RATE LIMITING
+    client_ip = raw_request.client.host
+    current_time = time.time()
     
+    if client_ip in request_tracker:
+        last_request_time = request_tracker[client_ip]
+        # Limit: 1 request per 10 seconds per IP
+        if current_time - last_request_time < 10.0: 
+            raise HTTPException(
+                status_code=429, 
+                detail="High Traffic Alert: Please wait before submitting another claim. You are in the queue."
+            )
+            
+    # Update the tracker
+    request_tracker[client_ip] = current_time
+    
+    # 2. Process Claim
     claim_id = f"SECURE-{request.user_id}-99"
     
     return {
         "status": "success",
         "message": "Claim passed security validation and was filed.",
-        "claim_id": claim_id,
-        "details": {
-            "user": request.user_id,
-            "type": request.policy_type,
-            "amount": request.amount
-        }
+        "claim_id": claim_id
     }
 
-# --- Runner ---
 if __name__ == "__main__":
-    print("🔒 Starting Imani Secure API Gateway...")
+    print("🔒 Starting OLEA Enterprise Secure API Gateway...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

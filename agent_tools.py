@@ -3,6 +3,9 @@ from typing import List, Dict, Any
 from langchain.tools import tool
 import requests
 import json
+import jwt
+import os
+from datetime import datetime, timedelta
 
 class InsuranceDatabase:
     """
@@ -60,7 +63,6 @@ class InsuranceDatabase:
 # Instantiate Database
 db = InsuranceDatabase()
 
-# Create LangChain Tools
 @tool
 def file_claim_tool(user_id: str, policy_type: str, amount: float) -> str:
     """
@@ -68,16 +70,21 @@ def file_claim_tool(user_id: str, policy_type: str, amount: float) -> str:
     Requires user_id (str), policy_type (str), and amount (float).
     Returns the claim status and ID.
     """
-    # Define the API endpoint
-    api_url = "http://localhost:8000/api/secure_claim"
+    api_url = os.getenv("API_URL", "http://localhost:8000/api/secure_claim")
     
-    # Define the headers with the security token
+    # Generate a dynamic JWT token that expires in 60 seconds
+    secret_key = "OLEA_HACKATHON_SUPER_SECRET_2026"
+    token_payload = {
+        "service": "imani_autonomous_agent",
+        "exp": datetime.utcnow() + timedelta(seconds=60)
+    }
+    dynamic_token = jwt.encode(token_payload, secret_key, algorithm="HS256")
+    
     headers = {
         "Content-Type": "application/json",
-        "X-Token": "Imani_Secure_2026"
+        "X-Token": dynamic_token
     }
     
-    # Create the payload
     payload = {
         "user_id": user_id,
         "policy_type": policy_type,
@@ -85,25 +92,26 @@ def file_claim_tool(user_id: str, policy_type: str, amount: float) -> str:
     }
     
     try:
-        # Make the POST request to the secure API
         response = requests.post(api_url, headers=headers, json=payload)
         
-        # Check if the request was successful
         if response.status_code == 200:
             response_data = response.json()
             return f"✅ {response_data['message']} Claim ID: {response_data['claim_id']}"
             
         elif response.status_code == 401:
-            return "🚨 Security System Blocked Request: Unauthorized Access (Invalid Token)."
+            return "🚨 Security System Blocked Request: Unauthorized Access (Invalid or Expired JWT Token)."
             
         elif response.status_code == 422:
-            return f"🚨 Security System Blocked Request: Validation Error. Please check your inputs (Amount limit: 50,000). Details: {response.text}"
+            return f"🚨 Security System Blocked Request: Validation Error (Anti-SQL Injection or Limit Exceeded)."
+            
+        elif response.status_code == 429:
+            return "⏳ High Traffic Alert: The OLEA servers are currently experiencing heavy load. Please wait a few moments and try your claim again."
             
         else:
-            return f"❌ Error filing claim. Server returned status {response.status_code}: {response.text}"
+            return f"❌ Error filing claim. Server returned status {response.status_code}."
             
     except requests.exceptions.ConnectionError:
-        return "❌ Error: Could not connect to the Secure API Gateway. Is the security_api.py server running?"
+        return "❌ Error: Could not connect to the Secure API Gateway. Is the server running?"
     except Exception as e:
         return f"❌ Unexpected Error: {str(e)}"
 

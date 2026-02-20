@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  secure-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    networks:
+      - imani-net
+
+  frontend-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.app
+    ports:
+      - "8501:8501"
+    environment:
+      # Tell the agent to talk to the Docker API container, not localhost
+      - API_URL=http://secure-api:8000/api/secure_claim
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
+    depends_on:
+      - secure-api
+    networks:
+      - imani-net
+
+networks:
+  imani-net:
+    driver: bridge

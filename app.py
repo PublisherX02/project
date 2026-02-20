@@ -25,19 +25,31 @@ def text_to_audio_autoplay(text, lang='ar'):
         return ""
 
 def transcribe_audio(audio_bytes, language_code="ar-TN"):
-    """Converts spoken audio into text."""
+    """Converts spoken audio into text with noise reduction."""
     recognizer = sr.Recognizer()
+    
+    # ENHANCEMENT: Applied from Notebook for noisy hackathon environments
+    recognizer.energy_threshold = 4000
+    recognizer.dynamic_energy_threshold = True
+    recognizer.pause_threshold = 0.8
+    
     audio_file = io.BytesIO(audio_bytes)
     try:
         with sr.AudioFile(audio_file) as source:
             audio_data = recognizer.record(source)
             text = recognizer.recognize_google(audio_data, language=language_code)
             return text
+            
+    # ENHANCEMENT: Advanced error catching from notebook
+    except sr.UnknownValueError:
+        return "⚠️ Could not understand audio. Please speak clearly."
+    except sr.RequestError as e:
+        return f"⚠️ API Error (Check Wi-Fi): {e}"
     except Exception as e:
         return f"⚠️ Audio error: {str(e)}"
 
 # --- UI CONFIGURATION ---
-st.set_page_config(page_title="OLEA Service Client", page_icon="🟢", layout="centered", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="OLEA Service Client", page_icon="🟢", layout="centered", initial_sidebar_state="expanded")
 
 # Custom CSS for Authentic WhatsApp Web Styling
 st.markdown("""
@@ -64,15 +76,27 @@ st.markdown("""
 user_avatar = "👤"
 olea_avatar = "🟢"
 
-# --- SIDEBAR ---
+# --- SIDEBAR (TOOLS & SETTINGS) ---
 with st.sidebar:
     st.header("⚙️ Settings")
     selected_language = st.selectbox("Choose your Dialect:", ["Tunisian Arabic (Tounsi)", "Moroccan (Darija)", "Algerian (Dziri)", "English", "French"])
-    if st.button("🗑️ Clear Chat History"):
+    if st.button("🗑️ Clear Chat History", use_container_width=True):
         chatbot.clear_history()
         st.session_state.messages = []
         st.rerun()
+        
+    st.divider()
+    
+    st.header("📎 Attachments & Voice")
+    # Feature 2: Voice Microphone
+    st.write("🎙️ **Record Voice Note:**")
+    audio_bytes = audio_recorder(text="Tap to Record", recording_color="#e8b923", neutral_color="#008069", icon_size="2x")
+    
+    # Feature 1: Vision AI
+    st.write("📸 **Upload Crash Photo:**")
+    uploaded_file = st.file_uploader("Upload Image", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
 
+# --- MAIN CHAT AREA ---
 if "messages" not in st.session_state:
     st.session_state.messages = [{"role": "assistant", "content": "Asslema! Bienvenue chez OLEA. Kifech najem n3awnek lyoum?"}]
 
@@ -82,18 +106,14 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=avatar_to_use):
         st.markdown(message["content"])
 
-# --- FEATURE 1: IMAGE UPLOAD (VISION AI) ---
-st.write("📸 **Upload Crash Photo:**")
-uploaded_file = st.file_uploader("Upload Image (JPG, PNG)", type=["jpg", "jpeg", "png"], label_visibility="collapsed")
+# --- PROCESS SIDEBAR INPUTS ---
+prompt = None
 
 if uploaded_file:
-    st.image(uploaded_file, caption="Uploaded Crash Photo", use_column_width=True)
-    if st.button("🔍 Run AI Damage Assessment & Fraud Check", use_container_width=True):
+    if st.sidebar.button("🔍 Run Damage Assessment", use_container_width=True):
         with st.spinner("Analyzing pixels and deepfake anomalies..."):
             base64_img = base64.b64encode(uploaded_file.getvalue()).decode("utf-8")
             assessment = analyze_damage_image(base64_img, selected_language)
-            
-            # Generate Voice for Vision Assessment
             tts_lang = 'ar' if 'Arabic' in selected_language or 'Dziri' in selected_language or 'Darija' in selected_language else 'en'
             audio_html = text_to_audio_autoplay(assessment, lang=tts_lang)
             
@@ -103,11 +123,6 @@ if uploaded_file:
                     st.markdown(audio_html, unsafe_allow_html=True)
             st.session_state.messages.append({"role": "assistant", "content": assessment})
 
-# --- FEATURE 2: VOICE MICROPHONE ---
-st.write("🎙️ **Tap to Speak:**")
-audio_bytes = audio_recorder(text="", recording_color="#e8b923", neutral_color="#008069", icon_size="2x")
-
-prompt = None
 if audio_bytes:
     with st.spinner("Listening..."):
         stt_lang = "ar-TN" if "Tunisian" in selected_language else "ar-DZ" if "Algerian" in selected_language else "ar-MA" if "Moroccan" in selected_language else "en-US"
@@ -116,28 +131,24 @@ if audio_bytes:
             st.error(prompt)
             prompt = None
 
-# --- TEXT FALLBACK & RESPONSE GENERATION ---
+# --- PROCESS TEXT INPUT & GENERATE RESPONSE ---
 text_input = st.chat_input("Message...", max_chars=500)
 if text_input:
     prompt = text_input
 
 if prompt:
-    # 1. User Message
     with st.chat_message("user", avatar=user_avatar):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # 2. Agent Response
     with st.spinner("OLEA is typing & thinking..."):
         try:
             response_data = chatbot.chat(prompt, language=selected_language)
             bot_response = response_data.get("response", "An error occurred.")
             
-            # 3. Voice Generation
             tts_lang = 'ar' if 'Arabic' in selected_language or 'Dziri' in selected_language or 'Darija' in selected_language else 'en'
             audio_html = text_to_audio_autoplay(bot_response, lang=tts_lang)
             
-            # 4. Render Bot Message + Audio
             with st.chat_message("assistant", avatar=olea_avatar):
                 st.markdown(bot_response)
                 if audio_html:

@@ -1,6 +1,46 @@
 import streamlit as st
 from main import chatbot
+import speech_recognition as sr
+from gtts import gTTS
+import io
+from audio_recorder_streamlit import audio_recorder
+import base64
 
+# --- VOICE ENGINE HELPER FUNCTIONS ---
+def text_to_audio_autoplay(text, lang='ar'):
+    """Converts text to speech and returns an HTML audio player that auto-plays."""
+    try:
+        tts = gTTS(text=text, lang=lang, slow=False)
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        b64 = base64.b64encode(fp.read()).decode()
+        # HTML to auto-play the audio invisibly
+        md = f"""
+            <audio autoplay="true">
+            <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+            </audio>
+            """
+        return md
+    except Exception as e:
+        return ""
+
+def transcribe_audio(audio_bytes, language_code="ar-TN"):
+    """Converts recorded audio bytes to text."""
+    recognizer = sr.Recognizer()
+    audio_file = io.BytesIO(audio_bytes)
+    try:
+        with sr.AudioFile(audio_file) as source:
+            audio_data = recognizer.record(source)
+            # You can dynamically change this to ar-DZ or ar-MA based on the sidebar!
+            text = recognizer.recognize_google(audio_data, language=language_code)
+            return text
+    except sr.UnknownValueError:
+        return "⚠️ Could not understand audio."
+    except sr.RequestError:
+        return "⚠️ Speech service unavailable."
+    except Exception as e:
+        return f"⚠️ Audio error: {str(e)}"
 # Page Configuration
 st.set_page_config(
     page_title="OLEA Service Client",
@@ -118,26 +158,50 @@ for message in st.session_state.messages:
     with st.chat_message(message["role"], avatar=avatar_to_use):
         st.markdown(message["content"])
 
-# User Input Handling
-if prompt := st.chat_input("Message..."):
-    # Render User Message
+# --- MICROPHONE UI ---
+st.write("🎙️ Tap to Speak:")
+audio_bytes = audio_recorder(text="", recording_color="#e8b923", neutral_color="#008069", icon_size="2x")
+
+# Handle Voice Input
+prompt = None
+if audio_bytes:
+    with st.spinner("Listening..."):
+        # Map selected language to Google STT codes
+        stt_lang = "ar-TN" if "Tunisian" in selected_language else "ar-DZ" if "Algerian" in selected_language else "ar-MA" if "Moroccan" in selected_language else "en-US"
+        prompt = transcribe_audio(audio_bytes, language_code=stt_lang)
+        if "⚠️" in prompt:
+            st.error(prompt)
+            prompt = None # Cancel if error
+
+# Handle Text Input (Fallback)
+text_input = st.chat_input("Message...", max_chars=500)
+if text_input:
+    prompt = text_input
+
+# --- GENERATE RESPONSE ---
+if prompt:
+    # 1. Render User Message
     with st.chat_message("user", avatar=user_avatar):
         st.markdown(prompt)
-    
-    # Save User Message
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    # Generate OLEA Response
-    with st.spinner("OLEA is typing..."):
+    # 2. Generate OLEA Response
+    with st.spinner("OLEA is typing & thinking..."):
         try:
             response_data = chatbot.chat(prompt, language=selected_language)
             bot_response = response_data.get("response", "An error occurred.")
             
-            # Render OLEA Message
+            # 3. Generate Audio for the Response
+            # Speak in Arabic if an Arabic dialect is selected, otherwise English
+            tts_lang = 'ar' if 'Arabic' in selected_language or 'Dziri' in selected_language or 'Darija' in selected_language else 'en'
+            audio_html = text_to_audio_autoplay(bot_response, lang=tts_lang)
+            
+            # 4. Render OLEA Message + Audio Player
             with st.chat_message("assistant", avatar=olea_avatar):
                 st.markdown(bot_response)
+                if audio_html:
+                    st.markdown(audio_html, unsafe_allow_html=True)
             
-            # Save OLEA Message
             st.session_state.messages.append({"role": "assistant", "content": bot_response})
             
         except Exception as e:

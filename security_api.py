@@ -64,8 +64,8 @@ def verify_token(x_token: str = Header(...)):
 
 # --- Data Validation Models ---
 class ClaimRequest(BaseModel):
-    user_id: str = Field(..., min_length=5, description="Unique User ID (Alphanumeric)")
-    policy_type: str = Field(..., description="Type of insurance policy (e.g., Motor, Home)")
+    user_id: str = Field(..., min_length=5, max_length=20, description="Unique User ID (Alphanumeric)")
+    policy_type: str = Field(..., max_length=50, description="Type of insurance policy (e.g., Motor, Home)")
     amount: float = Field(..., gt=0, le=50000, description="Claim amount (Max 50,000)")
 
     @validator("user_id", "policy_type")
@@ -89,17 +89,17 @@ async def submit_secure_claim(request: ClaimRequest, raw_request: Request):
     # Mask the User ID immediately so plain text never touches the logs
     masked_user = mask_pii(request.user_id)
     
-    # ANTI-DDOS RATE LIMITING
-    if client_ip in request_tracker:
-        last_request_time = request_tracker[client_ip]
-        if current_time - last_request_time < 10.0: 
-            logger.warning(f"RATE LIMIT TRIGGERED | IP: {client_ip} | Target: {masked_user}")
+    # ANTI-DDOS IDENTITY-BASED RATE LIMITING
+    if masked_user in request_tracker:
+        last_request_time = request_tracker[masked_user]
+        if current_time - last_request_time < 5.0: 
+            logger.warning(f"RATE LIMIT TRIGGERED | Proxychain/Spam blocked for Target: {masked_user}")
             raise HTTPException(
                 status_code=429, 
-                detail="High Traffic Alert: Please wait before submitting another claim. You are in the queue."
+                detail="High Traffic Alert: Multiple claims detected for this user. Please wait 5 seconds."
             )
             
-    request_tracker[client_ip] = current_time
+    request_tracker[masked_user] = current_time
     
     # Process Claim
     claim_id = f"SECURE-{request.user_id}-99"

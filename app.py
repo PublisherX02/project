@@ -60,7 +60,7 @@ def transcribe_audio(audio_bytes, language_code="ar-TN"):
         return f"⚠️ Audio error: {str(e)}"
 
 # --- UI CONFIGURATION ---
-st.set_page_config(page_title="OLEA Service Client", page_icon="🟢", layout="centered", initial_sidebar_state="expanded")
+st.set_page_config(page_title="OLEA Service Client", page_icon="olea.png", layout="centered", initial_sidebar_state="expanded")
 
 # Custom CSS for Authentic WhatsApp Web Styling
 st.markdown("""
@@ -85,7 +85,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 user_avatar = "👤"
-olea_avatar = "🟢"
+olea_avatar = "olea.png"
 
 # --- SIDEBAR (TOOLS & SETTINGS) ---
 with st.sidebar:
@@ -118,28 +118,31 @@ for message in st.session_state.messages:
 # --- PROCESS SIDEBAR INPUTS ---
 prompt = None
 
+# --- PROCESS VISION VIA API (AUTOMATIC & SILENT) ---
 if uploaded_file:
-    if st.sidebar.button("🔍 Run Damage Assessment", use_container_width=True):
-        with st.spinner("Analyzing pixels and deepfake anomalies..."):
-            base64_img = base64.b64encode(uploaded_file.getvalue()).decode("utf-8")
-            
-            # Request to Backend
-            payload = {"base64_img": base64_img, "language": selected_language}
+    # Check if we have already processed this specific file to prevent infinite looping
+    if "processed_image" not in st.session_state or st.session_state.processed_image != uploaded_file.name:
+        with st.spinner("Auto-scanning image for fraud and damage severity..."):
             try:
-                # Clean internal Docker Compose DNS routing
-                resp = requests.post("http://secure-api:8000/api/vision", json=payload, timeout=30)
-                resp.raise_for_status()
-                assessment = resp.json().get("response", "Error reading response.")
+                base64_img = base64.b64encode(uploaded_file.getvalue()).decode("utf-8")
+                payload = {"base64_img": base64_img, "language": selected_language, "filename": uploaded_file.name}
+                
+                # Use host.docker.internal for Windows Host Networking Fallback
+                response = requests.post("http://host.docker.internal:8000/api/vision", json=payload, timeout=60)
+                response.raise_for_status()
+                assessment = response.json().get("response", "Analysis failed.")
+                
+                # Render the assessment SILENTLY (No audio HTML generated)
+                with st.chat_message("assistant", avatar=olea_avatar):
+                    st.markdown(assessment)
+                
+                st.session_state.messages.append({"role": "assistant", "content": assessment})
+                
+                # Mark this file as processed so it doesn't run again when you type a message
+                st.session_state.processed_image = uploaded_file.name
+                
             except Exception as e:
-                assessment = f"⚠️ API Error (Backend Offline): {str(e)}"
-            tts_lang = 'ar' if 'Arabic' in selected_language or 'Dziri' in selected_language or 'Darija' in selected_language else 'en'
-            audio_html = text_to_audio_autoplay(assessment, lang=tts_lang)
-            
-            with st.chat_message("assistant", avatar=olea_avatar):
-                st.markdown(assessment)
-                if audio_html:
-                    st.markdown(audio_html, unsafe_allow_html=True)
-            st.session_state.messages.append({"role": "assistant", "content": assessment})
+                st.sidebar.error(f"❌ API Error: {str(e)}")
 
 # --- PROCESS INPUTS ---
 prompt = None
@@ -172,8 +175,8 @@ if prompt:
         try:
             payload = {"message": prompt, "language": selected_language}
             
-            # Send to FastAPI Backend
-            response = requests.post("http://secure-api:8000/api/chat", json=payload, timeout=60)
+            # Send to FastAPI Backend using Windows Host Networking Fallback
+            response = requests.post("http://host.docker.internal:8000/api/chat", json=payload, timeout=60)
             response.raise_for_status()
             bot_response = response.json().get("response", "No response generated.")
             

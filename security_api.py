@@ -122,6 +122,7 @@ class ChatRESTRequest(BaseModel):
 class VisionRESTRequest(BaseModel):
     base64_img: str
     language: str
+    filename: str = "unknown.jpg"
 
 @app.post("/api/chat")
 async def chat_endpoint(request: ChatRESTRequest):
@@ -137,7 +138,7 @@ async def chat_endpoint(request: ChatRESTRequest):
 async def vision_endpoint(request: VisionRESTRequest):
     """Processes Vision AI simulation."""
     try:
-        assessment = analyze_damage_image(request.base64_img, request.language)
+        assessment = analyze_damage_image(request.base64_img, request.language, request.filename)
         return {"response": assessment}
     except Exception as e:
         logger.error(f"Vision API Error: {str(e)}")

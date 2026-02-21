@@ -8,8 +8,6 @@ services:
       - "8000:8000"
     environment:
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
-    networks:
-      - imani-net
 
   frontend-agent:
     build:
@@ -20,14 +18,8 @@ services:
     volumes:
       - ./app.py:/app/app.py
     environment:
-      # Tell the agent to talk to the Docker API container
-      - API_URL=http://secure-api:8000/api/secure_claim
+      # Tell the agent to talk to the Docker API container via Windows internal boundary
+      - API_URL=http://host.docker.internal:8000/api/secure_claim
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
     depends_on:
       - secure-api
-    networks:
-      - imani-net
-
-networks:
-  imani-net:
-    driver: bridge

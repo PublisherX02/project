@@ -113,6 +113,36 @@ async def submit_secure_claim(request: ClaimRequest, raw_request: Request):
         "claim_id": claim_id
     }
 
+from main import chatbot, analyze_damage_image
+
+class ChatRESTRequest(BaseModel):
+    message: str
+    language: str
+
+class VisionRESTRequest(BaseModel):
+    base64_img: str
+    language: str
+
+@app.post("/api/chat")
+async def chat_endpoint(request: ChatRESTRequest):
+    """Processes a chat message via the React Agent."""
+    try:
+        response_data = chatbot.chat(request.message, language=request.language)
+        return {"response": response_data.get("response", "Error processing request")}
+    except Exception as e:
+        logger.error(f"Chat API Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/vision")
+async def vision_endpoint(request: VisionRESTRequest):
+    """Processes Vision AI simulation."""
+    try:
+        assessment = analyze_damage_image(request.base64_img, request.language)
+        return {"response": assessment}
+    except Exception as e:
+        logger.error(f"Vision API Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     logger.info("🔒 Starting OLEA Enterprise Secure API Gateway...")
     uvicorn.run(app, host="0.0.0.0", port=8000)

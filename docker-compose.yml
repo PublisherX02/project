@@ -6,6 +6,8 @@ services:
       dockerfile: Dockerfile.api
     ports:
       - "8000:8000"
+    environment:
+      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
     networks:
       - imani-net
 
@@ -13,11 +15,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.app
-      network: host
     ports:
       - "8501:8501"
+    volumes:
+      - ./app.py:/app/app.py
     environment:
-      # Tell the agent to talk to the Docker API container, not localhost
+      # Tell the agent to talk to the Docker API container
       - API_URL=http://secure-api:8000/api/secure_claim
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
     depends_on:

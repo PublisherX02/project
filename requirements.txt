@@ -16,6 +16,5 @@ uvicorn
 requests
 pyngrok
 PyJWT
-audio-recorder-streamlit
 SpeechRecognition
 gTTS

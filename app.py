@@ -1,10 +1,9 @@
 import streamlit as st
-from main import chatbot, analyze_damage_image
 import speech_recognition as sr
 from gtts import gTTS
 import io
-from audio_recorder_streamlit import audio_recorder
 import base64
+import requests
 
 # --- VOICE ENGINE HELPER FUNCTIONS ---
 def text_to_audio_autoplay(text, lang='ar'):
@@ -37,8 +36,20 @@ def transcribe_audio(audio_bytes, language_code="ar-TN"):
     try:
         with sr.AudioFile(audio_file) as source:
             audio_data = recognizer.record(source)
-            text = recognizer.recognize_google(audio_data, language=language_code)
-            return text
+            raw_text = recognizer.recognize_google(audio_data, language=language_code)
+            
+            # --- HACKATHON STT INTERCEPTOR (Dialect Fixes) ---
+            corrections = {
+                "كهرباء": "كرهبة",    # Fixes Arabic Kahraba -> Karhba
+                "كهراباء": "كرهبة",
+                "kahraba": "karhba",  # Fixes Latin
+                "accident": "aksidon",
+                "حادث": "كسيدة"       # Optional: MSA to Tounsi
+            }
+            for wrong, right in corrections.items():
+                raw_text = raw_text.replace(wrong, right)
+                
+            return raw_text
             
     # ENHANCEMENT: Advanced error catching from notebook
     except sr.UnknownValueError:
@@ -81,7 +92,6 @@ with st.sidebar:
     st.header("⚙️ Settings")
     selected_language = st.selectbox("Choose your Dialect:", ["Tunisian Arabic (Tounsi)", "Moroccan (Darija)", "Algerian (Dziri)", "English", "French"])
     if st.button("🗑️ Clear Chat History", use_container_width=True):
-        chatbot.clear_history()
         st.session_state.messages = []
         st.rerun()
         
@@ -89,8 +99,7 @@ with st.sidebar:
     
     st.header("📎 Attachments & Voice")
     # Feature 2: Voice Microphone
-    st.write("🎙️ **Record Voice Note:**")
-    audio_bytes = audio_recorder(text="Tap to Record", recording_color="#e8b923", neutral_color="#008069", icon_size="2x")
+    audio_bytes = st.audio_input("🎙️ Record Voice Note:")
     
     # Feature 1: Vision AI
     st.write("📸 **Upload Crash Photo:**")
@@ -113,7 +122,16 @@ if uploaded_file:
     if st.sidebar.button("🔍 Run Damage Assessment", use_container_width=True):
         with st.spinner("Analyzing pixels and deepfake anomalies..."):
             base64_img = base64.b64encode(uploaded_file.getvalue()).decode("utf-8")
-            assessment = analyze_damage_image(base64_img, selected_language)
+            
+            # Request to Backend
+            payload = {"base64_img": base64_img, "language": selected_language}
+            try:
+                # Clean internal Docker Compose DNS routing
+                resp = requests.post("http://secure-api:8000/api/vision", json=payload, timeout=30)
+                resp.raise_for_status()
+                assessment = resp.json().get("response", "Error reading response.")
+            except Exception as e:
+                assessment = f"⚠️ API Error (Backend Offline): {str(e)}"
             tts_lang = 'ar' if 'Arabic' in selected_language or 'Dziri' in selected_language or 'Darija' in selected_language else 'en'
             audio_html = text_to_audio_autoplay(assessment, lang=tts_lang)
             
@@ -123,31 +141,47 @@ if uploaded_file:
                     st.markdown(audio_html, unsafe_allow_html=True)
             st.session_state.messages.append({"role": "assistant", "content": assessment})
 
+# --- PROCESS INPUTS ---
+prompt = None
+is_voice_prompt = False  # The flag to control the audio response!
+
+# 1. Check for Voice Input
 if audio_bytes:
     with st.spinner("Listening..."):
         stt_lang = "ar-TN" if "Tunisian" in selected_language else "ar-DZ" if "Algerian" in selected_language else "ar-MA" if "Moroccan" in selected_language else "en-US"
-        prompt = transcribe_audio(audio_bytes, language_code=stt_lang)
+        prompt = transcribe_audio(audio_bytes.getvalue(), language_code=stt_lang)
         if "⚠️" in prompt:
             st.error(prompt)
             prompt = None
+        else:
+            is_voice_prompt = True
 
-# --- PROCESS TEXT INPUT & GENERATE RESPONSE ---
+# 2. Check for Text Input (This overwrites voice if both happen)
 text_input = st.chat_input("Message...", max_chars=500)
 if text_input:
     prompt = text_input
+    is_voice_prompt = False
 
+# 3. Execute the Chat
 if prompt:
     with st.chat_message("user", avatar=user_avatar):
         st.markdown(prompt)
     st.session_state.messages.append({"role": "user", "content": prompt})
     
-    with st.spinner("OLEA is typing & thinking..."):
+    with st.spinner("Imani is processing securely..."):
         try:
-            response_data = chatbot.chat(prompt, language=selected_language)
-            bot_response = response_data.get("response", "An error occurred.")
+            payload = {"message": prompt, "language": selected_language}
             
-            tts_lang = 'ar' if 'Arabic' in selected_language or 'Dziri' in selected_language or 'Darija' in selected_language else 'en'
-            audio_html = text_to_audio_autoplay(bot_response, lang=tts_lang)
+            # Send to FastAPI Backend
+            response = requests.post("http://secure-api:8000/api/chat", json=payload, timeout=60)
+            response.raise_for_status()
+            bot_response = response.json().get("response", "No response generated.")
+            
+            # ONLY generate audio if the user used the microphone
+            audio_html = ""
+            if is_voice_prompt:
+                tts_lang = 'ar' if 'Arabic' in selected_language or 'Dziri' in selected_language or 'Darija' in selected_language else 'en'
+                audio_html = text_to_audio_autoplay(bot_response, lang=tts_lang)
             
             with st.chat_message("assistant", avatar=olea_avatar):
                 st.markdown(bot_response)
@@ -157,4 +191,6 @@ if prompt:
             st.session_state.messages.append({"role": "assistant", "content": bot_response})
             
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            error_msg = f"❌ Network Error: Could not reach the AI Backend. Details: {str(e)}"
+            st.error(error_msg)
+            st.session_state.messages.append({"role": "assistant", "content": error_msg})

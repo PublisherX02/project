@@ -37,14 +37,44 @@ A custom NLP pipeline tracking emotional distress in North African dialect (Arab
 - **Performance:** **Accuracy: 70%** | **Urgent Recall: 83%**
 - **Integration:** Intercepts every chat message in 50ms. If the user is angry or in distress (e.g. "sayartiii tadharebtt!!"), it triggers a `CRISIS PROTOCOL` system prompt modifier, forcing the Llama 3 agent to respond with maximum empathy before technical advice. 
 
+![Sentiment Model Performance](ml_models/sentiment_metrics.png)
+
 ### 3. The Damage Assessor (YOLOv8s Vision)
 A computer vision model trained to detect and localize specific car damages before the heavier VLM takes over.
 - **Algorithm:** `ultralytics` YOLOv8s fine-tuned on the CarDD dataset.
 - **Performance:** **mAP@50: 0.794** across 5 classes.
 - **Integration:** Evaluates uploaded images and injects the precise localized damage classes into the Multimodal LLM prompt to ground repair estimates in robust objective data.
 
+![YOLOv8 Training Validation Results](ml_models/car_damage_run_v2/results.png)
+
 ## 🔐 DevSecOps & Architecture
 Imani operates within a "Privacy-by-Design" architecture. We abandoned monolithic structures for a True Decoupled Microservice approach, splitting the app into two isolated Docker containers (`frontend-agent` and `secure-api`).
+
+### The System Pipeline (Mermaid)
+
+```mermaid
+graph TD
+    User([User Mobile/Web]) -->|Audio / Text / Image| Streamlit[Streamlit Frontend]
+    Streamlit -->|Internal JWT JSON| API[FastAPI Secure Gateway]
+    
+    subgraph FastAPI Engine
+        API -->|Rate Limit / Auth| Security[Zero-Trust Core]
+        
+        Security --> Vision[YOLOv8s Vision Engine]
+        Security --> NLP[BERT Arabizi Sentiment]
+        Security --> Fraud[GradientBoosting Fraud Classifier]
+        
+        Vision --> LangChain[LangChain Agent Logic]
+        NLP --> LangChain
+        Fraud --> LangChain
+    end
+    
+    subgraph External Secure Services
+        LangChain -->|Prompt Injection| NVIDIA[NVIDIA 70b NIM]
+        LangChain <-->|Embeddings| ChromaDB[(PDF Policy RAG)]
+        LangChain <--> Supabase[(Supabase SQL DB)]
+    end
+```
 
 ### The Microservice Advantage:
 - **Zero-Latency UI:** The Streamlit frontend contains zero Heavy AI logic or PyTorch imports. It boots in milliseconds and acts purely as a lightweight REST client, communicating with the backend via JSON over internal Docker networks.

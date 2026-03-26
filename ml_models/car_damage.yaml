@@ -1,0 +1,11 @@
+path: C:/Users/moham/GOMYCODE/Insurance-AI-Chatbot/ml_models/car_damage_unified
+train: train/images
+val: val/images
+test: test/images
+
+names:
+  0: dent
+  1: surface_damage
+  2: glass shatter
+  3: lamp broken
+  4: tire flat

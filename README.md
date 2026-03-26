@@ -18,6 +18,31 @@ Imani isn't just a chatbot; she is a True Decoupled Microservice Architecture pr
 
 **📱 WhatsApp-Native UX & Live Demoing:** The Streamlit frontend is custom-styled to mimic WhatsApp Web, featuring official OLEA branding and a Live QR Code integration, allowing stakeholders to seamlessly scan the screen and test the app on their own mobile devices.
 
+## 🧠 Custom ML Architecture & Metrics (MLOps)
+
+This project leverages dedicated ML models to provide a true "AI Brain" alongside strict security monitoring.
+
+### 1. The Fraud Analyst (GradientBoosting)
+Replaces hard-coded logic with a mathematical fraud probability model trained on 15,420 historical auto claims.
+- **Algorithm:** `scikit-learn` GradientBoostingClassifier (15k Dataset)
+- **Performance:** **ROC-AUC: 0.8385** | **Fraud Recall: 81%**
+- **Integration:** When a user files a claim, the backend dynamically calculates the risk based on 30 standard features and injects the exact percentage into a Multi-Agent Debate powered by Llama 3. The LLMs argue whether to approve or flag the claim based on the mathematical risk.
+- **Explainability:** Model features are mapped via SHAP analysis (Top driver: `Fault = Policy Holder`).
+
+![Fraud Detection SHAP Graph](ml_models/fraud_shap.png)
+
+### 2. The Sentiment Detector (Arabic BERT)
+A custom NLP pipeline tracking emotional distress in North African dialect (Arabizi).
+- **Algorithm:** `CAMeL-Lab/bert-base-arabic-camelbert-da-sentiment` fine-tuned on the TUNIZI dataset.
+- **Performance:** **Accuracy: 70%** | **Urgent Recall: 83%**
+- **Integration:** Intercepts every chat message in 50ms. If the user is angry or in distress (e.g. "sayartiii tadharebtt!!"), it triggers a `CRISIS PROTOCOL` system prompt modifier, forcing the Llama 3 agent to respond with maximum empathy before technical advice. 
+
+### 3. The Damage Assessor (YOLOv8s Vision)
+A computer vision model trained to detect and localize specific car damages before the heavier VLM takes over.
+- **Algorithm:** `ultralytics` YOLOv8s fine-tuned on the CarDD dataset.
+- **Performance:** **mAP@50: 0.794** across 5 classes.
+- **Integration:** Evaluates uploaded images and injects the precise localized damage classes into the Multimodal LLM prompt to ground repair estimates in robust objective data.
+
 ## 🔐 DevSecOps & Architecture
 Imani operates within a "Privacy-by-Design" architecture. We abandoned monolithic structures for a True Decoupled Microservice approach, splitting the app into two isolated Docker containers (`frontend-agent` and `secure-api`).
 

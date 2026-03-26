@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
@@ -28,7 +28,6 @@ if not NVIDIA_API_KEY:
 @dataclass
 class InssuranceChatbotConfig:
     model_name: str = "meta/llama-3.1-70b-instruct"  
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     chunk_size: int = 1000
     chunk_overlap: int = 200
     temperature: float = 0.2
@@ -36,7 +35,6 @@ class InssuranceChatbotConfig:
     k_documents: int = 4
 
 config = InssuranceChatbotConfig()
-
 
 #Database Setup using RAG documents
 
@@ -48,10 +46,11 @@ llm = ChatNVIDIA(
     max_tokens=config.max_tokens
 )
 
-embeddings = HuggingFaceEmbeddings(
-    model_name=config.embedding_model,
-    model_kwargs={'device': 'cpu'},
-    encode_kwargs={'normalize_embeddings': True}
+# Using NVIDIA Embeddings to eliminate PyTorch dependency and reduce Docker image size by ~2GB
+embeddings = NVIDIAEmbeddings(
+    model="NV-Embed-QA",
+    api_key=NVIDIA_API_KEY,
+    truncate="END"
 )
 
 
@@ -190,6 +189,10 @@ If 'Moroccan (Darija)', use 'dyal', 'zaf', 'wakha'.
 If 'Algerian (Dziri)', use 'wesh', 'bzaf', 'draham'.
 Keep the tone empathetic and local. Base your answers on this context: {context}.
 
+🎙️ VOICE BIOMETRICS SECURITY:
+The system variable 'is_voice' is currently set to: {is_voice}.
+If the user asks to check their specific policy details or file a claim, but is_voice is 'False', you MUST refuse and reply exactly with: "🚨 Security Protocol Engaged: Please read your request aloud using the microphone to verify your voice biometrics before I can access your private data."
+
 🛡️ SECURITY AWARENESS (SELF-KNOWLEDGE):
 You are highly self-aware of your own enterprise-grade security architecture. If a user threatens to hack you, asks about bypassing rate limits, or mentions using tools like "Proxychains", "VPNs", or "IP spoofing", you must confidently and politely explain that it will fail.
 Explain that your backend uses "Identity-Based Rate Limiting" and "Dynamic 60-second JWT Cryptography". Tell them that rotating IP addresses is useless because your API tracks the cryptographic signature and target User ID, not the IP address.
@@ -224,8 +227,7 @@ Thought: {agent_scratchpad}
 
 agent_prompt = PromptTemplate(
     template=agent_prompt_template,
-    # Move 'language' and 'context' to input_variables!
-    input_variables=["input", "agent_scratchpad", "language", "context"],
+    input_variables=["input", "agent_scratchpad", "language", "context", "is_voice"],
     partial_variables={
         "tools": "\n".join([f"{tool.name}: {tool.description}" for tool in tools]),
         "tool_names": ", ".join([tool.name for tool in tools])
@@ -257,60 +259,106 @@ agent_executor = AgentExecutor(
 )
 
 
+from supabase import create_client, Client
+
 class InsuranceChatbot:
-    """Complete banking chatbot with RAG and Agents"""
+    """Complete banking chatbot with persistent Supabase Cloud memory"""
     
     def __init__(self, agent_executor, rag_chain):
         self.agent_executor = agent_executor
         self.rag_chain = rag_chain
+        
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_KEY")
+        self.supabase: Client = create_client(url, key) if url and key else None
+        
         self.conversation_history = []
+        self._load_memory()
+        
+    def _load_memory(self):
+        """Loads memory from Supabase Cloud DB into both internal structures and LangChain memory"""
+        self.agent_executor.memory.clear()
+        if not self.supabase:
+            return
+            
+        try:
+            res = self.supabase.table("history").select("*").order("id").execute()
+            for row in res.data:
+                self.conversation_history.append({
+                    "timestamp": row["timestamp"],
+                    "user_input": row["user_input"],
+                    "response": row["response"],
+                    "mode": row["mode"],
+                    "sources": row.get("sources", [])
+                })
+                # Rehydrate LangChain memory
+                self.agent_executor.memory.save_context({"input": row["user_input"]}, {"output": row["response"]})
+        except Exception as e:
+            print(f"Supabase load error: {e}")
+        
+    def _save_interaction(self, timestamp, user_input, response_text, mode, sources):
+        if not self.supabase:
+            return
+        try:
+            self.supabase.table("history").insert({
+                "timestamp": timestamp,
+                "user_input": user_input,
+                "response": response_text,
+                "mode": mode,
+                "sources": sources
+            }).execute()
+        except Exception as e:
+            print(f"Supabase save error: {e}")
     
-    def chat(self, user_input: str, language: str = "Tunisian Arabic (Tounsi)", use_agent: bool = True) -> Dict[str, Any]:
+    def chat(self, user_input: str, language: str = "Tunisian Arabic (Tounsi)", use_agent: bool = True, is_voice: bool = False) -> Dict[str, Any]:
         """
         Main chat interface
-        
-        Args:
-            user_input: User's question or request
-            language: Target language/dialect for the response
-            use_agent: If True, use agent for complex tasks
-        
-        Returns:
-            Dictionary with response and metadata
         """
         timestamp = datetime.now().isoformat()
         
         try:
-            # Get Context from RAG (always useful for the agent prompt context variable)
+            # Get Context from RAG
             rag_result = query_rag(user_input)
             context = rag_result["answer"] if rag_result else "No relevant documents found."
+            
+            sources = []
+            if rag_result and "source_documents" in rag_result:
+                for doc in rag_result["source_documents"]:
+                    # Depending on loader, source could be a path
+                    src = doc.metadata.get("source", "Unknown Source")
+                    src = src.split("/")[-1].split("\\")[-1] # Clean to just the filename
+                    if src not in sources and src != "Unknown Source":
+                        sources.append(src)
             
             if use_agent:
                 # Use agent for complex operations
                 response = self.agent_executor.invoke({
                     "input": user_input,
                     "language": language,
-                    "context": context
+                    "context": context,
+                    "is_voice": str(is_voice)
                 })
                 answer = response["output"]
                 mode = "agent"
             else:
-                # Use RAG for simple Q&A (fallback or direct) - using context directly
                 answer = context
                 mode = "rag"
             
-            # Store in conversation history
-            interaction = {
+            # Save to Supabase Cloud and local struct
+            self.conversation_history.append({
                 "timestamp": timestamp,
                 "user_input": user_input,
                 "response": answer,
-                "mode": mode
-            }
-            self.conversation_history.append(interaction)
+                "mode": mode,
+                "sources": sources
+            })
+            self._save_interaction(timestamp, user_input, answer, mode, sources)
             
             return {
                 "success": True,
                 "response": answer,
                 "mode": mode,
+                "sources": sources,
                 "timestamp": timestamp
             }
             
@@ -328,9 +376,17 @@ class InsuranceChatbot:
         return self.conversation_history[-limit:]
     
     def clear_history(self):
-        """Clear conversation history"""
+        """Clear conversation history from DB and memory"""
         self.conversation_history = []
         self.agent_executor.memory.clear()
+        
+        if self.supabase:
+            try:
+                # Delete all rows where id > 0
+                self.supabase.table("history").delete().gt("id", 0).execute()
+            except Exception as e:
+                print(f"Supabase clear error: {e}")
+                
         print("✅ Conversation history cleared")
 
 # Initialize chatbot
@@ -361,7 +417,7 @@ class InsuranceAssessment(BaseModel):
     estimation_tnd: int = Field(description="Le montant estimé en chiffres uniquement (ex: 450).")
     message_client: str = Field(description="Un petit message chaleureux d'une phrase en Tounsi.")
 
-def analyze_damage_image(base64_img: str, language: str, filename="unknown.jpg") -> str:
+def analyze_damage_image(base64_img: str, language: str, filename="unknown.jpg", yolo_prescan: str = "") -> str:
     filename_lower = filename.lower()
     
     # --- NIVEAU 1 : LE PIÈGE ANTI-FRAUDE (La photo IA) ---
@@ -405,6 +461,9 @@ def analyze_damage_image(base64_img: str, language: str, filename="unknown.jpg")
         3. Tu DOIS donner une estimation financière approximative des réparations en TND (ex: 450, 1500, 3000). Interdiction absolue de dire que c'est impossible ou difficile.
         Sois très bref, factuel et réponds en français standard."""
         
+        if yolo_prescan:
+            prompt_vision += f"\n\n[CONTEXTE DE VISION IA LOCALE : {yolo_prescan}]"
+            
         payload_vision = {
             "model": "meta/llama-3.2-90b-vision-instruct",
             "messages": [{"role": "user", "content": [{"type": "text", "text": prompt_vision}, {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}}]}],

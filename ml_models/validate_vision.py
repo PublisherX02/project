@@ -1,0 +1,43 @@
+from ultralytics import YOLO
+import random
+from pathlib import Path
+
+def validate():
+    try:
+        model = YOLO("ml_models/car_damage_yolov8s.pt")
+    except Exception as e:
+        print(f"Failed to load tuned model: {e}")
+        return
+
+    print("\n--- TEST SPLIT VALIDATION ---")
+    metrics = model.val(data="ml_models/car_damage.yaml", split="test")
+    
+    print(f"\nOverall mAP@50: {metrics.box.map50:.4f}")
+    
+    print("\nPer-class mAP@50:")
+    class_indices = metrics.box.ap_class_index
+    for i, c_idx in enumerate(class_indices):
+        class_name = model.names[c_idx]
+        if len(metrics.box.ap50) > i:
+            ap50 = metrics.box.ap50[i]
+            print(f"  {class_name}: {ap50:.4f}")
+        
+    print("\n--- SAMPLE INFERENCE CHECK ---")
+    img_dir = Path("ml_models/car_damage_unified/test/images")
+    imgs = list(img_dir.glob("*.jpg"))
+    
+    if not imgs:
+        print("No test images found!")
+        return
+        
+    for img_path in random.sample(imgs, min(3, len(imgs))):
+        res = model(str(img_path), verbose=False)
+        boxes = res[0].boxes
+        if len(boxes) == 0:
+            print(f"Image {img_path.name}: [No damage detected]")
+        else:
+            detections = [f"{model.names[int(c)]} ({conf:.2f})" for c, conf in zip(boxes.cls, boxes.conf)]
+            print(f"Image {img_path.name}: {detections}")
+
+if __name__ == '__main__':
+    validate()

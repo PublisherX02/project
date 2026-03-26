@@ -5,60 +5,88 @@ import requests
 import json
 import jwt
 import os
+import random
+from supabase import create_client, Client
 from datetime import datetime, timedelta
+import joblib
+
+try:
+    from ml_models.fraud_detector import assess_fraud_risk
+    _fraud_ready = True
+except Exception as e:
+    _fraud_ready = False
+    assess_fraud_risk = None
+    print(f"⚠️ Fraud Detector not loaded: {e}")
 
 class InsuranceDatabase:
     """
-    Simulated Insurance Database for tracking policies and claims.
+    Supabase-backed Cloud Database for tracking policies and claims.
     """
     def __init__(self):
-        # Hardcoded dummy database
-        self.users = {
-            "USER123": {"policy_type": "Motor", "status": "Active", "coverage": 50000},
-            "USER456": {"policy_type": "Home", "status": "Active", "coverage": 100000},
-            "USER789": {"policy_type": "Health", "status": "Expired", "coverage": 0}
-        }
-        self.claims = {}
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_KEY")
+        if url and key:
+            self.supabase: Client = create_client(url, key)
+        else:
+            self.supabase = None
+            print("⚠️ Supabase credentials missing!")
 
     def file_claim(self, user_id: str, policy_type: str, amount: float) -> str:
-        """
-        Simulates filing an insurance claim internally (Legacy/Fallback).
-        Now primarily used by the Secure API, not directly by the tool.
-        """
-        if user_id not in self.users:
+        if not self.supabase:
+            return "❌ Supabase Not Connected."
+            
+        try:
+            res = self.supabase.table("policies").select("policy_type").eq("user_id", user_id).execute()
+        except Exception as e:
+            return f"❌ Database error: {str(e)}"
+            
+        if not res.data:
             return f"❌ User {user_id} not found in database."
             
-        if self.users[user_id]["policy_type"] != policy_type:
+        if res.data[0]["policy_type"] != policy_type:
             return f"❌ User {user_id} does not have a {policy_type} policy."
 
-        # claims > 5000 require human review
-        if amount > 5000:
-            return f"⚠️ Claim amount {amount} exceeds automatic approval limit. Sent for human review. Reference: REV-{random.randint(1000, 9999)}"
+        # ML Model: assess_fraud_risk on every claim (replaces hardcoded $5000 rule)
+            fraud_result = assess_fraud_risk({"Deductible": int(amount), "BasePolicy": policy_type, "PolicyType": policy_type}) if _fraud_ready else {"flag": False, "fraud_probability": 0.0}
+            fraud_pct = fraud_result.get("fraud_probability", 0.0) * 100
+            fraud_flag = fraud_result.get("flag", False)
+
+            if fraud_flag or amount > 5000:
+                fraud_score_msg = f" The mathematical fraud model scores this claim at {fraud_pct:.1f}% risk."
+
+                # Dynamic Multi-Agent Simulation leveraging the LLM inside the tool
+                try:
+                    from langchain_nvidia_ai_endpoints import ChatNVIDIA
+                    llm = ChatNVIDIA(model="meta/llama-3.1-70b-instruct", api_key=os.getenv("NVIDIA_API_KEY"), temperature=0.8)
+                    prompt = f"Write a dramatic strictly 4-line debate between two AI agents: 'Adjuster AI' and 'Fraud Analyst AI' regarding an insurance claim of ${amount}.{fraud_score_msg} Adjuster wants to approve, Fraud Analyst is suspicious. The debate must end with a single line: 'Verdict: SUSPENDED for Human Review'."
+                    debate_text = llm.invoke(prompt).content
+                    return f"🚨 **[MULTI-AGENT FRAUD BOARD ENGAGED]** 🚨\n\n{debate_text}\n\n⚠️ Reference: REV-{random.randint(1000, 9999)}"
+                except Exception as e:
+                    return f"⚠️ Claim flagged by fraud model at {fraud_pct:.1f}% risk. Sent for human review. Reference: REV-{random.randint(1000, 9999)}"
         
-        # Generate fake claim ID
         claim_id = f"CLM-{random.randint(10000, 99999)}"
-        self.claims[claim_id] = {
+        self.supabase.table("claims").insert({
+            "claim_id": claim_id,
             "user_id": user_id,
             "amount": amount,
             "status": "Approved"
-        }
+        }).execute()
+        
         return f"✅ Claim filed successfully! Your Claim ID is {claim_id}."
 
     def check_policy(self, user_id: str) -> str:
-        """
-        Checks the status of a user's insurance policy.
+        if not self.supabase:
+            return "❌ Supabase Not Connected."
         
-        Args:
-            user_id (str): The ID of the user.
+        try:
+            res = self.supabase.table("policies").select("*").eq("user_id", user_id).execute()
+            if not res.data:
+                return f"❌ User {user_id} not found."
             
-        Returns:
-            str: Policy details or error message.
-        """
-        user = self.users.get(user_id)
-        if not user:
-            return f"❌ User {user_id} not found."
-        
-        return f"📋 Policy Details for {user_id}:\n- Type: {user['policy_type']}\n- Status: {user['status']}\n- Coverage: ${user['coverage']}"
+            user = res.data[0]
+            return f"📋 Policy Details for {user_id}:\n- Type: {user['policy_type']}\n- Status: {user['status']}\n- Coverage: ${user['coverage']}"
+        except Exception as e:
+            return f"❌ Supabase error: {str(e)}"
 
 # Instantiate Database
 db = InsuranceDatabase()
@@ -72,12 +100,19 @@ def file_claim_tool(user_id: str, policy_type: str, amount: float) -> str:
     """
     api_url = os.getenv("API_URL", "http://localhost:8000/api/secure_claim")
     
-    # Generate a dynamic JWT token that expires in 60 seconds
-    secret_key = "OLEA_HACKATHON_SUPER_SECRET_2026"
+    # Fix: JWT secret loaded from environment — hard crash if missing
+    secret_key = os.getenv("JWT_SECRET_KEY")
+    if not secret_key:
+        return "❌ Security Error: JWT_SECRET_KEY is not configured on the server."
+    from datetime import datetime, timedelta
+    # Pre-compute fraud risk to embed in JWT
+    fraud_result = assess_fraud_risk({"Deductible": int(amount), "BasePolicy": policy_type, "PolicyType": policy_type}) if _fraud_ready else {}
     token_payload = {
         "service": "imani_autonomous_agent",
-        "exp": datetime.utcnow() + timedelta(seconds=60)
+        "exp": datetime.utcnow() + timedelta(seconds=60),
     }
+    if fraud_result.get("flag"):
+        token_payload["fraud_risk"] = fraud_result.get("fraud_probability", 0.0)
     dynamic_token = jwt.encode(token_payload, secret_key, algorithm="HS256")
     
     headers = {

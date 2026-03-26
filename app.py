@@ -4,6 +4,11 @@ from gtts import gTTS
 import io
 import base64
 import requests
+import os
+
+# Internal API key for authenticating with the backend gateway
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "OLEA_INTERNAL_GATEWAY_KEY_2026")
+INTERNAL_HEADER = {"X-Internal-Key": INTERNAL_API_KEY}
 
 # --- VOICE ENGINE HELPER FUNCTIONS ---
 def text_to_audio_autoplay(text, lang='ar'):
@@ -120,7 +125,24 @@ with st.sidebar:
     selected_language = st.selectbox("Choose your Dialect:", ["Tunisian Arabic (Tounsi)", "Moroccan (Darija)", "Algerian (Dziri)", "English", "French"])
     if st.button("🗑️ Clear Chat History", use_container_width=True):
         st.session_state.messages = []
+        try:
+            # Tell backend to clear history too
+            requests.delete("http://host.docker.internal:8000/api/chat/clear", timeout=5)
+        except Exception:
+            pass
         st.rerun()
+
+    if st.checkbox("🔍 Show Security Dashboard"):
+        st.markdown("### Live Immutable Audit Log")
+        try:
+            res = requests.get("http://host.docker.internal:8000/api/admin/logs", headers=INTERNAL_HEADER, timeout=5)
+            if res.status_code == 200:
+                logs = res.json().get("logs", [])
+                st.code("".join(logs) if logs else "No logs yet.", language="shell")
+            else:
+                st.error("Logging API returned an error.")
+        except Exception:
+            st.error("Waiting for Secure API Gateway...")
         
     st.divider()
     
@@ -142,6 +164,10 @@ for message in st.session_state.messages:
     avatar_to_use = olea_avatar if message["role"] == "assistant" else user_avatar
     with st.chat_message(message["role"], avatar=avatar_to_use):
         st.markdown(message["content"])
+        if "sources" in message and message["sources"]:
+            with st.expander("📚 Authenticated Sources"):
+                for src in message["sources"]:
+                    st.caption(f"✓ {src}")
 
 # --- PROCESS SIDEBAR INPUTS ---
 prompt = None
@@ -156,7 +182,7 @@ if uploaded_file:
                 payload = {"base64_img": base64_img, "language": selected_language, "filename": uploaded_file.name}
                 
                 # Use host.docker.internal for Windows Host Networking Fallback
-                response = requests.post("http://host.docker.internal:8000/api/vision", json=payload, timeout=60)
+                response = requests.post("http://host.docker.internal:8000/api/vision", json=payload, headers=INTERNAL_HEADER, timeout=60)
                 response.raise_for_status()
                 assessment = response.json().get("response", "Analysis failed.")
                 
@@ -201,12 +227,15 @@ if prompt:
     
     with st.spinner("Imani is processing securely..."):
         try:
-            payload = {"message": prompt, "language": selected_language}
+            payload = {"message": prompt, "language": selected_language, "is_voice": is_voice_prompt}
             
             # Send to FastAPI Backend using Windows Host Networking Fallback
-            response = requests.post("http://host.docker.internal:8000/api/chat", json=payload, timeout=60)
+            response = requests.post("http://host.docker.internal:8000/api/chat", json=payload, headers=INTERNAL_HEADER, timeout=60)
             response.raise_for_status()
-            bot_response = response.json().get("response", "No response generated.")
+            
+            response_json = response.json()
+            bot_response = response_json.get("response", "No response generated.")
+            sources = response_json.get("sources", [])
             
             # ONLY generate audio if the user used the microphone
             audio_html = ""
@@ -216,10 +245,18 @@ if prompt:
             
             with st.chat_message("assistant", avatar=olea_avatar):
                 st.markdown(bot_response)
+                if sources:
+                    with st.expander("📚 Authenticated Sources"):
+                        for src in sources:
+                            st.caption(f"✓ {src}")
                 if audio_html:
                     st.markdown(audio_html, unsafe_allow_html=True)
             
-            st.session_state.messages.append({"role": "assistant", "content": bot_response})
+            st.session_state.messages.append({
+                "role": "assistant", 
+                "content": bot_response,
+                "sources": sources
+            })
             
         except Exception as e:
             error_msg = f"❌ Network Error: Could not reach the AI Backend. Details: {str(e)}"

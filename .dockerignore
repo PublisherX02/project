@@ -3,3 +3,8 @@ __pycache__/
 .env
 .git/
 *.pdf
+ml_models/sentiment_model/
+runs/
+checkpoints/
+*.safetensors
+*.bin

@@ -8,11 +8,11 @@ from dotenv import load_dotenv
 
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
-from langchain_nvidia_ai_endpoints import NVIDIAEmbeddings
+
 from langchain.chains import RetrievalQA
 from langchain.prompts import PromptTemplate
-from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from langchain.schema import Document
+from langchain.llms.base import LLM
 from langchain.agents import AgentExecutor, create_react_agent, Tool
 from langchain.memory import ConversationBufferMemory
 from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader
@@ -39,19 +39,86 @@ config = InssuranceChatbotConfig()
 #Database Setup using RAG documents
 
 
-llm = ChatNVIDIA(
-    model=config.model_name,
-    api_key=NVIDIA_API_KEY,
+class DirectNVIDIALLM(LLM):
+    """Direct HTTP wrapper for NVIDIA API — bypasses broken LangChain NVIDIA routing."""
+    model_name: str = "meta/llama-3.1-70b-instruct"
+    temperature: float = 0.2
+    max_tokens: int = 1024
+    api_key: str = ""
+
+    @property
+    def _llm_type(self) -> str:
+        return "direct_nvidia"
+
+    def _call(self, prompt: str, stop: Optional[List[str]] = None, **kwargs: Any) -> str:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature
+        }
+        try:
+            import requests as req
+            r = req.post(
+                "https://integrate.api.nvidia.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            r.raise_for_status()
+            return r.json()["choices"][0]["message"]["content"]
+        except Exception as e:
+            return f"LLM Error: {str(e)}"
+
+llm = DirectNVIDIALLM(
+    model_name=config.model_name,
     temperature=config.temperature,
-    max_tokens=config.max_tokens
+    max_tokens=config.max_tokens,
+    api_key=NVIDIA_API_KEY
 )
 
+
 # Using NVIDIA Embeddings to eliminate PyTorch dependency and reduce Docker image size by ~2GB
-embeddings = NVIDIAEmbeddings(
-    model="NV-Embed-QA",
-    api_key=NVIDIA_API_KEY,
-    truncate="END"
-)
+
+# NEW — direct HTTP embeddings, bypasses broken routing
+from langchain.embeddings.base import Embeddings
+from typing import List
+import requests as req
+
+class DirectNVIDIAEmbeddings(Embeddings):
+    """Direct HTTP wrapper for NVIDIA Embeddings API."""
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.url = "https://integrate.api.nvidia.com/v1/embeddings"
+        self.model = "nvidia/nv-embed-v1"
+
+    def _embed(self, texts: List[str]) -> List[List[float]]:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "input": texts,
+            "model": self.model,
+            "input_type": "query",
+            "encoding_format": "float",
+            "truncate": "END"
+        }
+        r = req.post(self.url, headers=headers, json=payload, timeout=30)
+        r.raise_for_status()
+        return [item["embedding"] for item in r.json()["data"]]
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        return self._embed(texts)
+
+    def embed_query(self, text: str) -> List[float]:
+        return self._embed([text])[0]
+
+embeddings = DirectNVIDIAEmbeddings(api_key=NVIDIA_API_KEY)
 
 
 

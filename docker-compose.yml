@@ -5,6 +5,8 @@ services:
       dockerfile: Dockerfile.api
     ports:
       - "8000:8000"
+    volumes:
+      - ./ml_models:/app/ml_models
     environment:
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - SUPABASE_URL=${SUPABASE_URL}
@@ -21,7 +23,6 @@ services:
     volumes:
       - ./app.py:/app/app.py
     environment:
-      # Tell the agent to talk to the Docker API container via Windows internal boundary
       - API_URL=http://host.docker.internal:8000/api/secure_claim
       - NVIDIA_API_KEY=${NVIDIA_API_KEY}
       - INTERNAL_API_KEY=${INTERNAL_API_KEY}

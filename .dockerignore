@@ -1,10 +1,28 @@
-venv/
-__pycache__/
-.env
-.git/
-*.pdf
+# Raw datasets
+CarDD/
+img/
+TUNIZI.txt
+insurance_claims.csv
+sample_submission.csv
+train_identity.csv
+test_identity.csv
+train_transaction.csv
+test_transaction.csv
+
+# Training scripts (not needed at runtime)
+ml_models/train_*.py
+ml_models/prepare_dataset.py
+ml_models/validate_vision.py
+ml_models/car_damage_unified/
+
+# Large model weights (mounted as volume instead)
+ml_models/car_damage_yolov8s.pt
 ml_models/sentiment_model/
+yolov8n.pt
+yolov8s.pt
+
+# Build artifacts
 runs/
-checkpoints/
-*.safetensors
-*.bin
+*.log
+__pycache__/
+.git/

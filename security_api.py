@@ -159,11 +159,13 @@ VALID_IMAGE_MAGIC = {b'\xff\xd8': 'JPEG', b'\x89P': 'PNG'}
 class ChatRESTRequest(BaseModel):
     message: str
     language: str
+    session_id: str = "default_session"
     is_voice: bool = False
 
 class VisionRESTRequest(BaseModel):
     base64_img: str = Field(..., max_length=MAX_B64_IMAGE_LEN, description="Base64 image (max 5MB)")
     language: str
+    session_id: str = "default_session"
     filename: str = "unknown.jpg"
 
 @app.api_route("/api/v1/database_dump", methods=["GET", "POST", "PUT", "DELETE"])
@@ -199,7 +201,7 @@ async def chat_endpoint(request: ChatRESTRequest):
                     "before any technical response.]"
                 )
 
-        response_data = chatbot.chat(augmented_message, language=request.language, is_voice=request.is_voice)
+        response_data = chatbot.chat(augmented_message, language=request.language, session_id=request.session_id, is_voice=request.is_voice)
         return {
             "response": response_data.get("response", "Error processing request"),
             "sources": response_data.get("sources", [])
@@ -208,7 +210,7 @@ async def chat_endpoint(request: ChatRESTRequest):
         logger.error(f"Chat API Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.delete("/api/chat/clear")
+@app.delete("/api/chat/clear", dependencies=[Depends(verify_internal_key)])
 async def clear_chat_endpoint():
     """Clears the chat history from the persistent memory."""
     try:
@@ -216,6 +218,28 @@ async def clear_chat_endpoint():
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error clearing chat: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/conversations", dependencies=[Depends(verify_internal_key)])
+async def fetch_conversations_endpoint():
+    """Returns all historic conversation threads for the frontend sidebar."""
+    try:
+        data = chatbot.get_all_conversations()
+        return {"conversations": data}
+    except Exception as e:
+        logger.error(f"Error fetching conversations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/history/{session_id}", dependencies=[Depends(verify_internal_key)])
+async def fetch_chat_history(session_id: str):
+    """Returns the chat history specifically for one session to render in Streamlit."""
+    try:
+        # Load memory explicitly for this session
+        chatbot.session_id = session_id
+        chatbot._load_memory()
+        return {"history": chatbot.conversation_history}
+    except Exception as e:
+        logger.error(f"Error fetching history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/vision", dependencies=[Depends(verify_internal_key)])
@@ -232,6 +256,11 @@ async def vision_endpoint(request: VisionRESTRequest):
         # Wire custom YOLOv8 pipeline before NVIDIA VLM
         from ml_models.damage_detector import detect_damage
         yolo_res = detect_damage(request.base64_img)
+        # Ensure session is active for vision context if needed
+        if request.session_id != chatbot.session_id:
+            chatbot.session_id = request.session_id
+            chatbot._load_memory()
+            
         assessment = analyze_damage_image(request.base64_img, request.language, request.filename, yolo_prescan=yolo_res['summary'])
         return {"response": assessment}
     except HTTPException:
@@ -240,8 +269,8 @@ async def vision_endpoint(request: VisionRESTRequest):
         logger.error(f"Vision API Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Fix: Admin logs endpoint is now protected by JWT token dependency
-@app.get("/api/admin/logs", dependencies=[Depends(verify_token)])
+# Fix: Admin logs endpoint is now protected by the internal key (Streamlit Friendly)
+@app.get("/api/admin/logs", dependencies=[Depends(verify_internal_key)])
 async def get_admin_logs():
     """Returns the last 50 lines of the immutable audit.log. Requires JWT Auth."""
     try:
@@ -252,6 +281,16 @@ async def get_admin_logs():
         return {"logs": ["Log file not created yet."]}
     except Exception as e:
         return {"logs": [f"Error reading logs: {str(e)}"]}
+
+@app.get("/api/sessions", dependencies=[Depends(verify_internal_key)])
+async def get_sessions_endpoint():
+    """Returns the last 10 unique conversation sessions sessions for the sidebar."""
+    try:
+        sessions = chatbot.get_recent_sessions(limit=10)
+        return {"sessions": sessions}
+    except Exception as e:
+        logger.error(f"Sessions API Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     logger.info("🔒 Starting OLEA Enterprise Secure API Gateway...")

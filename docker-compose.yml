@@ -8,11 +8,11 @@ services:
     volumes:
       - ./ml_models:/app/ml_models
     environment:
-      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
-      - SUPABASE_URL=${SUPABASE_URL}
-      - SUPABASE_KEY=${SUPABASE_KEY}
-      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - NVIDIA_API_KEY=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
+      - SUPABASE_URL=https://rtjskltssmpymtxeelua.supabase.co
+      - SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ0anNrbHRzc21weW10eGVlbHVhIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NDM3MDg4NSwiZXhwIjoyMDg5OTQ2ODg1fQ.rerqqOuw8zMok3j6blQyA1Ag_QyaZCD6Ji8H6X6R9OM
+      - JWT_SECRET_KEY=8cf2c4e4e429acffb069eaecf45f69321c7c608c73fd17ef55eecbd84f25115e
+      - INTERNAL_API_KEY=OLEA_INTERNAL_GATEWAY_KEY_2026
 
   frontend-agent:
     build:
@@ -24,7 +24,7 @@ services:
       - ./app.py:/app/app.py
     environment:
       - API_URL=http://host.docker.internal:8000/api/secure_claim
-      - NVIDIA_API_KEY=${NVIDIA_API_KEY}
-      - INTERNAL_API_KEY=${INTERNAL_API_KEY}
+      - NVIDIA_API_KEY=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
+      - INTERNAL_API_KEY=OLEA_INTERNAL_GATEWAY_KEY_2026
     depends_on:
       - secure-api

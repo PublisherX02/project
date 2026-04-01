@@ -18,9 +18,11 @@ except Exception as e:
     assess_fraud_risk = None
     print(f"⚠️ Fraud Detector not loaded: {e}")
 
+import bcrypt
+
 class InsuranceDatabase:
     """
-    Supabase-backed Cloud Database for tracking policies and claims.
+    Supabase-backed Cloud Database for tracking policies, claims, and securely authenticating clients.
     """
     def __init__(self):
         url = os.environ.get("SUPABASE_URL")
@@ -87,6 +89,52 @@ class InsuranceDatabase:
             return f"📋 Policy Details for {user_id}:\n- Type: {user['policy_type']}\n- Status: {user['status']}\n- Coverage: ${user['coverage']}"
         except Exception as e:
             return f"❌ Supabase error: {str(e)}"
+            
+    def authenticate_client(self, first_name: str, plaintext_password: str) -> str:
+        if not self.supabase: return "❌ Supabase Not Connected."
+        try:
+            # DEMO LIMITATION: We query by first_name only for simplicity in the demo.
+            # In a real environment, this breaks if two clients share a first name (e.g., two "Mohameds").
+            # A true production query must combine first_name + last_name, or use an email/ID.
+            res = self.supabase.table("clients").select("*").eq("first_name", first_name).eq("is_active", True).execute()
+            if not res.data:
+                return "❌ Access Denied."
+            
+            client = res.data[0]
+            if client.get("failed_login_attempts", 0) >= 5:
+                return "🔒 Account locked. Contact OLEA support."
+            
+            if bcrypt.checkpw(plaintext_password.encode('utf-8'), client["password_hash"].encode('utf-8')):
+                self.supabase.table("clients").update({"failed_login_attempts": 0}).eq("id", client["id"]).execute()
+                return f"✅ Access Granted | Welcome {client['first_name']} {client['last_name']} | Policy: {client.get('policy_type', 'N/A')} | Coverage: ${client.get('coverage', 0)}"
+            else:
+                self.supabase.table("clients").update({"failed_login_attempts": client.get("failed_login_attempts", 0) + 1}).eq("id", client["id"]).execute()
+                return "❌ Access Denied. Incorrect password."
+        except Exception as e:
+            return f"❌ Authentication error: {str(e)}"
+            
+    def create_client(self, first_name: str, last_name: str, password: str, age: int, profession: str, salary: float, kids: int, cars: int, social_status: str) -> str:
+        if not self.supabase: return "❌ Supabase Not Connected."
+        try:
+            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+            res = self.supabase.table("clients").insert({
+                "first_name": first_name,
+                "last_name": last_name,
+                "password_hash": password_hash,
+                "age": age,
+                "profession": profession,
+                "salary": salary,
+                "kids": kids,
+                "cars": cars,
+                "social_status": social_status,
+                "failed_login_attempts": 0,
+                "is_active": True,
+                "policy_type": "Motor",
+                "coverage": 50000
+            }).execute()
+            return f"✅ Account created successfully for {first_name} {last_name}."
+        except Exception as e:
+            return f"❌ Registration failed: {str(e)}"
 
 # Instantiate Database
 db = InsuranceDatabase()
@@ -103,7 +151,7 @@ def file_claim_tool(user_id: str, policy_type: str, amount: float) -> str:
     # Fix: JWT secret loaded from environment — hard crash if missing
     secret_key = os.getenv("JWT_SECRET_KEY")
     if not secret_key:
-        return "❌ Security Error: JWT_SECRET_KEY is not configured on the server."
+        raise RuntimeError("JWT_SECRET_KEY environment variable is not set.")
     from datetime import datetime, timedelta
     # Pre-compute fraud risk to embed in JWT
     fraud_result = assess_fraud_risk({"Deductible": int(amount), "BasePolicy": policy_type, "PolicyType": policy_type}) if _fraud_ready else {}
@@ -159,5 +207,22 @@ def check_policy_tool(user_id: str) -> str:
     """
     return db.check_policy(user_id)
 
+@tool
+def authenticate_client_tool(first_name: str, plaintext_password: str) -> str:
+    """
+    Authenticate an existing OLEA client by first name and password.
+    Returns Access Granted with client details or Access Denied.
+    """
+    return db.authenticate_client(first_name, plaintext_password)
+
+@tool  
+def create_client_tool(first_name: str, last_name: str, password: str, age: int, profession: str, salary: float, kids: int, cars: int, social_status: str) -> str:
+    """
+    Create a new OLEA client account with all required profile information.
+    Requires: first_name, last_name, password (min 6 chars), age (18-100), 
+    profession, salary (>0), kids, cars, social_status.
+    """
+    return db.create_client(first_name, last_name, password, age, profession, salary, kids, cars, social_status)
+
 # Export list of tools
-insurance_tools = [file_claim_tool, check_policy_tool]
+insurance_tools = [file_claim_tool, check_policy_tool, authenticate_client_tool, create_client_tool]

@@ -3,14 +3,21 @@ import random
 from pathlib import Path
 
 def validate():
+    # Fix: Resolve all paths relative to the script location to ensure it works anywhere
+    script_dir = Path(__file__).parent
+    weights_path = script_dir / "car_damage_yolov8s.pt"
+    data_yaml = script_dir / "car_damage.yaml"
+    img_dir = script_dir / "car_damage_unified/test/images"
+
     try:
-        model = YOLO("ml_models/car_damage_yolov8s.pt")
+        model = YOLO(str(weights_path))
     except Exception as e:
-        print(f"Failed to load tuned model: {e}")
+        print(f"Failed to load tuned model from {weights_path}: {e}")
         return
 
     print("\n--- TEST SPLIT VALIDATION ---")
-    metrics = model.val(data="ml_models/car_damage.yaml", split="test")
+    # Data YAML must be passed as a string for ultralytics val()
+    metrics = model.val(data=str(data_yaml), split="test")
     
     print(f"\nOverall mAP@50: {metrics.box.map50:.4f}")
     
@@ -23,11 +30,10 @@ def validate():
             print(f"  {class_name}: {ap50:.4f}")
         
     print("\n--- SAMPLE INFERENCE CHECK ---")
-    img_dir = Path("ml_models/car_damage_unified/test/images")
     imgs = list(img_dir.glob("*.jpg"))
     
     if not imgs:
-        print("No test images found!")
+        print(f"No test images found in {img_dir}!")
         return
         
     for img_path in random.sample(imgs, min(3, len(imgs))):

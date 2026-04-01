@@ -1,28 +1,35 @@
-# Raw datasets
-CarDD/
+# Ignore massive datasets to prevent ballooning container storage
+train/
+valid/
+test/
+dents/
+old dataset/
+new dataset/
+new flat tire dataset/
+lamp dataset/
+new one 1/
+insurance_claims/
+another dataset/
+tire flat dataset/
+TUNIZI-Sentiment-Analysis-Tunisian-Arabizi-Dataset-master/
+Training Data/
 img/
-TUNIZI.txt
-insurance_claims.csv
-sample_submission.csv
-train_identity.csv
-test_identity.csv
-train_transaction.csv
-test_transaction.csv
+CarDD/
 
-# Training scripts (not needed at runtime)
-ml_models/train_*.py
-ml_models/prepare_dataset.py
-ml_models/validate_vision.py
-ml_models/car_damage_unified/
+# Ignore massive Zip archives
+*.zip
+olea_v4_kaggle.zip
 
-# Large model weights (mounted as volume instead)
-ml_models/car_damage_yolov8s.pt
+# Ignore heavy ML weights that are mounted externally anyway
+ml_models/car_damage_yolov8s*.pt
+ml_models/yolo*.pt
+yolov8*.pt
+yolo26*.pt
 ml_models/sentiment_model/
-yolov8n.pt
-yolov8s.pt
 
-# Build artifacts
-runs/
-*.log
+# System Files and Caches
 __pycache__/
+*.log
+runs/
 .git/
+.env

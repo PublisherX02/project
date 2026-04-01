@@ -26,3 +26,32 @@ ml_models/*.pt
 *.safetensors
 checkpoints/
 ml_models/sentiment_model/
+
+# Datasets
+Training Data/
+another dataset/
+dents/
+lamp dataset/
+new dataset/
+new flat tire dataset/
+new one 1/
+tire flat dataset/
+valid/
+train/
+test/
+val/
+img/
+
+# Models & Large Archives
+*.pt
+*.zip
+ml_models/car_damage_run_v*/
+ml_models/car_damage_v4*/
+
+# Project specific junk
+audit.log
+data.yaml
+README.dataset.txt
+README.roboflow.txt
+ml_models/prepare_*.py
+presentation.html

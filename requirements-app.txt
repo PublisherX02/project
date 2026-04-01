@@ -3,3 +3,7 @@ requests
 python-dotenv
 SpeechRecognition
 gTTS
+supabase==2.5.3
+pydantic[email]
+email-validator
+streamlit-cookies-controller

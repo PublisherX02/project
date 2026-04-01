@@ -14,7 +14,21 @@ INTERNAL_HEADER = {"x-internal-key": INTERNAL_API_KEY}
 # Dynamically extract the base URL
 BACKEND_URL = os.getenv("API_URL", "http://host.docker.internal:8000").replace("/api/secure_claim", "")
 
-st.set_page_config(page_title="OLEA | Whatsapp AI", page_icon="olea.png", layout="wide", initial_sidebar_state="expanded")
+from dotenv import load_dotenv
+from auth_ui import render_auth_gate
+load_dotenv()
+
+st.set_page_config(page_title="Imani | Insurance AI", page_icon="Gemini_Generated_Image_olt2tcolt2tcolt2.png", layout="wide", initial_sidebar_state="expanded")
+
+# ============================================================
+# AUTH GATE — must pass before anything else renders
+# ============================================================
+render_auth_gate()
+# If we reach here, user is authenticated and email-verified
+_auth_user = st.session_state.get("auth_user")
+_auth_profile = st.session_state.get("auth_profile", {})
+_first_name = _auth_profile.get("first_name", "") if _auth_profile else ""
+
 
 # --- 1. SESSION MANAGEMENT (UUID PER BROWSER SESSION) ---
 if "session_id" not in st.session_state:
@@ -78,10 +92,11 @@ if not st.session_state.language_confirmed:
     if st.button("Confirm Choice / تأكيد", use_container_width=True):
         st.session_state.language_confirmed = True
         st.session_state.selected_lang_name = chosen
+        name_part = f" {_first_name}" if _first_name else ""
         welcomes = {
-            "Tunisian Arabic (Tounsi)": "Asslema! Ana Imani, l'assistante virtuelle de l'assurance 🛡️. 3andek compte? Aktelni ismek w password mte3ek bech n3awnek.",
-            "English": "Hello! I'm Imani, your virtual insurance AI assistant 🛡️. Do you have an account? Type your username and password below so I can authenticate you.",
-            "French": "Bonjour! Je suis Imani, votre assistante virtuelle d'assurance 🛡️. Avez-vous un compte ? Écrivez votre nom d'utilisateur et mot de passe."
+            "Tunisian Arabic (Tounsi)": f"Asslema{name_part}! Ana Imani, msa3dtek fi l'assurance 🛡️. Chnou bech n3awnek lyoum?",
+            "English": f"Hello{name_part}! I'm Imani, your virtual insurance AI assistant 🛡️. How can I help you today?",
+            "French": f"Bonjour{name_part} ! Je suis Imani, votre assistante virtuelle d'assurance 🛡️. Comment puis-je vous aider aujourd'hui ?"
         }
         st.session_state.messages = [{"role": "assistant", "content": welcomes[chosen]}]
         st.rerun()
@@ -227,20 +242,21 @@ st.markdown(f"""
     [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) {{
         background-color: #202C33 !important;
         align-items: center !important;
-        padding: 10px 16px !important;
+        padding: 10px 24px !important;
         position: fixed !important;
         bottom: 0px !important;
-        left: 380px !important; /* Start after sidebar */
-        right: 0 !important;
+        left: 380px !important;
+        width: calc(100% - 380px) !important;
         z-index: 1000 !important;
-        height: 62px !important;
-        gap: 15px !important;
+        height: 70px !important;
+        gap: 10px !important;
+        border-top: 1px solid #222D34;
     }}
 
-    /* Width control for elements in footer */
-    [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) > [data-testid="column"]:nth-child(1) {{ flex: 0 0 35px !important; }}
+    /* Column Sizing for Attachment | Input | Mic */
+    [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) > [data-testid="column"]:nth-child(1) {{ flex: 0 0 45px !important; width: 45px !important; min-width: 45px !important; }}
     [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) > [data-testid="column"]:nth-child(2) {{ flex: 1 1 auto !important; }}
-    [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) > [data-testid="column"]:nth-child(3) {{ flex: 0 0 35px !important; }}
+    [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) > [data-testid="column"]:nth-child(3) {{ flex: 0 0 45px !important; width: 45px !important; min-width: 45px !important; }}
 
     /* Form Input Box Simulation */
     div[data-testid="stChatInput"] {{
@@ -272,7 +288,6 @@ st.markdown(f"""
         }}
     }}
     
-    /* CUSTOM BUTTON STYLES FOR HISTORY SIDEBAR */
     .stButton>button {{
         width: 100%; text-align: left !important; background-color: transparent !important; color: #E9EDEF !important; border: none !important; 
         padding: 12px 15px !important; font-size: 15px; border-bottom: 1px solid #222D34 !important; border-radius: 0 !important;
@@ -282,22 +297,103 @@ st.markdown(f"""
     
     /* Clean Selectbox in Sidebar */
     .stSelectbox label {{ color: #00A884 !important; font-weight: 600 !important; }}
+
+    /* TYPING ANIMATION (3 Dots) */
+    .typing {{
+        width: 38px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 0;
+    }}
+    .typing span {{
+        width: 7px;
+        height: 7px;
+        background-color: #8696A0;
+        border-radius: 50%;
+        animation: typing-dot 1s infinite alternate;
+    }}
+    .typing span:nth-child(2) {{ animation-delay: 0.2s; }}
+    .typing span:nth-child(3) {{ animation-delay: 0.4s; }}
+    @keyframes typing-dot {{
+        from {{ opacity: 0.3; transform: scale(0.8); }}
+        to {{ opacity: 1; transform: scale(1.1); }}
+    }}
+
+    /* RED LOGOUT BUTTON — Far Top Right */
+    /* RED LOGOUT BUTTON — Absolute Top Right Fix */
+    div:has(> button[key="logout_trigger"]) {{
+        position: fixed !important;
+        top: 16px !important;
+        right: 20px !important;
+        z-index: 9999 !important;
+        width: auto !important;
+    }}
+    button[key="logout_trigger"] {{
+        background-color: #EA4335 !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 18px !important;
+        padding: 5px 15px !important;
+        font-size: 13px !important;
+        font-weight: 700 !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+        height: 32px !important;
+    }}
+    button[key="logout_trigger"]:hover {{ background-color: #C62828 !important; }}
 </style>
 """, unsafe_allow_html=True)
 
 
 # --- 6. TOP HEADER (RIGHT PANE FIX) ---
+_user_display = f"  {_first_name}" if _first_name else ""
 st.markdown(f"""
 <div class="whatsapp-header" id="wa-header">
     <div class="contact-avatar" style="overflow:hidden;">
         <img src="data:image/png;base64,{imani_b64}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;" onerror="this.style.display='none';this.parentElement.innerHTML='🛡️';">
     </div>
     <div class="contact-info">
-        <h1>Imani Virtual Agent</h1>
+        <h1>Imani Assistant — Welcome, {_first_name}!</h1>
         <p>● online</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
+
+# --- RED LOGOUT BUTTON (top-right, global) ---
+# We render it at the very top so it can be picked up by the fixed CSS
+if st.button("🚪 Logout", key="logout_trigger"):
+    st.session_state["show_logout_confirm"] = True
+
+# Logout confirmation dialog
+if st.session_state.get("show_logout_confirm"):
+    with st.container():
+        st.markdown("""
+        <div style="position:fixed;top:60px;right:16px;background:#2A3942;border-radius:12px;
+                    padding:20px 24px;z-index:2000;border:1px solid #3D4A52;
+                    box-shadow:0 4px 20px rgba(0,0,0,0.5);min-width:260px;">
+            <p style="color:#E9EDEF;margin:0 0 16px;font-size:14px;">
+                🚪 Are you sure you want to sign out?
+            </p>
+        </div>""", unsafe_allow_html=True)
+        col_yes, col_no = st.columns(2)
+        with col_yes:
+            if st.button("✅ Yes, sign out", key="confirm_logout", use_container_width=True):
+                from supabase import create_client
+                import os
+                try:
+                    sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+                    sb.auth.sign_out()
+                except Exception:
+                    pass
+                for key in ["auth_user", "auth_session", "auth_profile", "sb_access_token",
+                            "sb_refresh_token", "language_confirmed", "messages",
+                            "session_id", "show_logout_confirm"]:
+                    st.session_state.pop(key, None)
+                st.rerun()
+        with col_no:
+            if st.button("❌ Cancel", key="cancel_logout", use_container_width=True):
+                st.session_state["show_logout_confirm"] = False
+                st.rerun()
 
 
 # --- 5. SIDEBAR (SESSION HISTORY) ---
@@ -340,10 +436,11 @@ with st.sidebar:
 # This fallback only fires if session state was cleared mid-session
 if not st.session_state.messages:
     lang = st.session_state.get("selected_lang_name", "English")
+    name_part = f" {_first_name}" if _first_name else ""
     welcomes = {
-        "Tunisian Arabic (Tounsi)": "Asslema! Ana Imani, msa3dtek fi l'assurance 🛡️. 3andek compte? Aktelni ismek w password mte3ek bech n3awnek.",
-        "English": "Hello! I'm Imani, your virtual insurance AI assistant 🛡️. Do you have an account? Please type your username and password so I can help you.",
-        "French": "Bonjour! Je suis Imani, votre assistante virtuelle d'assurance 🛡️. Avez-vous un compte ? Entrez votre identifiant et mot de passe."
+        "Tunisian Arabic (Tounsi)": f"Asslema{name_part}! Ana Imani, msa3dtek fi l'assurance 🛡️. Chnou bech n3awnek lyoum?",
+        "English": f"Hello{name_part}! I'm Imani, your virtual insurance AI assistant 🛡️. How can I help you today?",
+        "French": f"Bonjour{name_part}! Je suis Imani, votre assistante virtuelle d'assurance 🛡️. Comment puis-je vous aider aujourd'hui?"
     }
     st.session_state.messages = [{"role": "assistant", "content": welcomes.get(lang, welcomes["English"])}]
 
@@ -397,7 +494,14 @@ if prompt:
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👤"): st.markdown(prompt)
     
-    with st.spinner("Imani is typing..."):
+    with st.empty():
+        st.markdown("""
+        <div style="display: flex; align-items: center; margin-bottom: 20px;">
+            <div style="background-color: #202C33; padding: 8px 12px; border-radius: 8px; display: inline-block;">
+                <div class="typing"><span></span><span></span><span></span></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         try:
             payload = {"message": prompt, "language": selected_lang_name, "session_id": st.session_state.session_id, "is_voice": (audio_bytes is not None)}
             res = requests.post(f"{BACKEND_URL}/api/chat", json=payload, headers=INTERNAL_HEADER, timeout=60)

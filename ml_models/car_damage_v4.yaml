@@ -1,0 +1,12 @@
+# OLEA Insurance Damage Dataset V4 - Master Merge
+# Total Unique Images: ~38,588
+# Classes: 5 (dent, surface_damage, glass_shatter, lamp_broken, tire_flat)
+
+path: c:/Users/moham/GOMYCODE/Insurance-AI-Chatbot/ml_models/car_damage_v4
+train: train/images
+val: valid/images
+test: test/images
+
+# Classes
+nc: 5
+names: ['dent', 'surface_damage', 'glass_shatter', 'lamp_broken', 'tire_flat']

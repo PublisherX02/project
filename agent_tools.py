@@ -90,51 +90,19 @@ class InsuranceDatabase:
         except Exception as e:
             return f"❌ Supabase error: {str(e)}"
             
-    def authenticate_client(self, first_name: str, plaintext_password: str) -> str:
+    def get_client_profile(self, user_id: str) -> str:
+        """Fetch a user's profile from the profiles table. Used after Supabase Auth login."""
         if not self.supabase: return "❌ Supabase Not Connected."
         try:
-            # DEMO LIMITATION: We query by first_name only for simplicity in the demo.
-            # In a real environment, this breaks if two clients share a first name (e.g., two "Mohameds").
-            # A true production query must combine first_name + last_name, or use an email/ID.
-            res = self.supabase.table("clients").select("*").eq("first_name", first_name).eq("is_active", True).execute()
+            res = self.supabase.table("profiles").select("*").eq("id", user_id).single().execute()
             if not res.data:
-                return "❌ Access Denied."
-            
-            client = res.data[0]
-            if client.get("failed_login_attempts", 0) >= 5:
-                return "🔒 Account locked. Contact OLEA support."
-            
-            if bcrypt.checkpw(plaintext_password.encode('utf-8'), client["password_hash"].encode('utf-8')):
-                self.supabase.table("clients").update({"failed_login_attempts": 0}).eq("id", client["id"]).execute()
-                return f"✅ Access Granted | Welcome {client['first_name']} {client['last_name']} | Policy: {client.get('policy_type', 'N/A')} | Coverage: ${client.get('coverage', 0)}"
-            else:
-                self.supabase.table("clients").update({"failed_login_attempts": client.get("failed_login_attempts", 0) + 1}).eq("id", client["id"]).execute()
-                return "❌ Access Denied. Incorrect password."
+                return f"❌ Profile not found for user {user_id}."
+            p = res.data
+            return (f"👤 Profile: {p['first_name']} {p['last_name']} | "
+                    f"Profession: {p['profession']} | Income: {p['income']} TND/month | "
+                    f"Status: {p['social_status']} | Kids: {p['kids']} | Cars: {p['cars']}")
         except Exception as e:
-            return f"❌ Authentication error: {str(e)}"
-            
-    def create_client(self, first_name: str, last_name: str, password: str, age: int, profession: str, salary: float, kids: int, cars: int, social_status: str) -> str:
-        if not self.supabase: return "❌ Supabase Not Connected."
-        try:
-            password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-            res = self.supabase.table("clients").insert({
-                "first_name": first_name,
-                "last_name": last_name,
-                "password_hash": password_hash,
-                "age": age,
-                "profession": profession,
-                "salary": salary,
-                "kids": kids,
-                "cars": cars,
-                "social_status": social_status,
-                "failed_login_attempts": 0,
-                "is_active": True,
-                "policy_type": "Motor",
-                "coverage": 50000
-            }).execute()
-            return f"✅ Account created successfully for {first_name} {last_name}."
-        except Exception as e:
-            return f"❌ Registration failed: {str(e)}"
+            return f"❌ Profile fetch error: {str(e)}"
 
 # Instantiate Database
 db = InsuranceDatabase()
@@ -208,21 +176,13 @@ def check_policy_tool(user_id: str) -> str:
     return db.check_policy(user_id)
 
 @tool
-def authenticate_client_tool(first_name: str, plaintext_password: str) -> str:
+def get_client_profile_tool(user_id: str) -> str:
     """
-    Authenticate an existing OLEA client by first name and password.
-    Returns Access Granted with client details or Access Denied.
+    Fetch the authenticated user's insurance profile from the database.
+    Requires user_id (UUID string from Supabase Auth session).
+    Returns profile details including profession, income, social status, kids, and cars.
     """
-    return db.authenticate_client(first_name, plaintext_password)
-
-@tool  
-def create_client_tool(first_name: str, last_name: str, password: str, age: int, profession: str, salary: float, kids: int, cars: int, social_status: str) -> str:
-    """
-    Create a new OLEA client account with all required profile information.
-    Requires: first_name, last_name, password (min 6 chars), age (18-100), 
-    profession, salary (>0), kids, cars, social_status.
-    """
-    return db.create_client(first_name, last_name, password, age, profession, salary, kids, cars, social_status)
+    return db.get_client_profile(user_id)
 
 # Export list of tools
-insurance_tools = [file_claim_tool, check_policy_tool, authenticate_client_tool, create_client_tool]
+insurance_tools = [file_claim_tool, check_policy_tool, get_client_profile_tool]

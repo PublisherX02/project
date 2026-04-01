@@ -1,8 +1,8 @@
 task: detect
 mode: train
-model: C:/Users/moham/GOMYCODE/Insurance-AI-Chatbot/yolov8s.pt
+model: C:/Users/moham/GOMYCODE/Insurance-AI-Chatbot/yolov8m.pt
 data: C:/Users/moham/GOMYCODE/Insurance-AI-Chatbot/ml_models/car_damage.yaml
-epochs: 75
+epochs: 100
 time: null
 patience: 10
 batch: 16

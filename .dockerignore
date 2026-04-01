@@ -1,4 +1,5 @@
 # Ignore massive datasets to prevent ballooning container storage
+ml_models/
 train/
 valid/
 test/

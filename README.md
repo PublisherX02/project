@@ -124,20 +124,33 @@ We massively optimized the deployment footprint. By aggressively tuning the `.do
 - NVIDIA API Key & Supabase Project Keys.
 - Ngrok (for public mobile demoing).
 
-### 1. The Clean Build
-Open your terminal in the project folder and run:
+### 1. The Clean Build (Windows)
+We provide a dedicated batch script to handle the build and container management automatically.
+Double-click `build_and_run.bat` or run:
+```powershell
+./build_and_run.bat
+```
+
+### 2. Manual/Linux Build
 ```bash
 docker-compose up --build -d
 ```
 
-### 2. Live Public Tunnels
-Once the containers spin up, you can access the app locally at `http://localhost:8501`.
+### 3. Mandatory Database Setup (Supabase)
+Before the app can function, you **MUST** initialize the authentication tables:
+1. Open your **Supabase SQL Editor**.
+2. Paste and Run the contents of [`supabase_schema.sql`](supabase_schema.sql).
+3. In Supabase Dashboard → Authentication → Providers → Email, ensure **"Confirm email"** is toggled **ON**.
 
-**To deploy publicly for Judges/Stakeholders:**
-Open a new terminal and run Ngrok, forcing the IPv4 loopback to bypass Windows Docker IPv6 errors:
+### 2. Live Public Tunnels (For Jury/Stakeholders)
+Once the containers spin up, the app is live at `http://localhost:8502`.
+
+**To deploy publicly for mobile demoing:**
+Open a new terminal and run:
 ```bash
-ngrok http 127.0.0.1:8501
+ngrok http 8502
 ```
 - Distribute the generated `https://...ngrok-free.app` link.
-- Test the conversational Cybersecurity Onboarding gate!
-- Upload `fake_crash.jpg` to test the Fraud Trap, or upload a real crash photo to trigger the NVIDIA 90B Vision API.
+- **Login/Sign-Up Gate:** Users MUST now create an account and verify their email before accessing Imani.
+- **Verification:** Test the conversational Pydantic validation by entering invalid data (e.g., negative income).
+- **Security:** Use the **Red Logout** button to clear the session securely.

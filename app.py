@@ -173,11 +173,16 @@ imani_b64 = base64.b64encode(open('Gemini_Generated_Image_olt2tcolt2tcolt2.png',
 
 st.markdown(f"""
 <style>
-    /* HIDE DEFAULT STREAMLIT ELEMENTS */
-    [data-testid="stHeader"] {{ display: none !important; }}
-    #MainMenu {{ visibility: hidden; }}
-    footer {{ visibility: hidden; }}
-    .stApp > header {{ display: none !important; }}
+    /* RESTORE HEADER FOR SIDEBAR TOGGLE */
+    [data-testid="stHeader"] {{ 
+        background-color: transparent !important; 
+        height: 50px !important; 
+    }}
+    /* Hide Streamlit's default Deploy button and menu to clear the top right corner */
+    .stAppDeployButton, [data-testid="stToolbar"] {{
+        display: none !important; 
+    }}
+    .stApp > header {{ background: transparent !important; }}
 
     /* GLOBAL APP BACKGROUND (Right Web View Area) */
     .stApp {{
@@ -186,21 +191,31 @@ st.markdown(f"""
         background-attachment: fixed;
     }}
     
-    /* LEFT PANE (Sidebar Override) */
+    /* SIDEBAR (Allow native collapsing) */
     [data-testid="stSidebar"] {{
         background-color: #111B21 !important;
         border-right: 1px solid #222D34;
-        min-width: 380px !important;
-        max-width: 380px !important;
         padding-top: 0 !important;
+        position: relative !important; /* Required for bottom-centering the language text */
     }}
 
-    /* CUSTOM WHATSAPP HEADER FIXED BAR (Right View) */
+    /* DYNAMIC RESPONSIVE WIDTHS FOR HEADER & INPUT BAR */
+    /* Default (Sidebar open) */
+    .whatsapp-header, [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) {{
+        left: 336px !important; 
+        width: calc(100vw - 336px) !important;
+        transition: all 0.3s ease;
+    }}
+    /* When sidebar is collapsed */
+    section[data-testid="stSidebar"][aria-expanded="false"] + section.main .whatsapp-header,
+    section[data-testid="stSidebar"][aria-expanded="false"] + section.main [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) {{
+        left: 0 !important;
+        width: 100vw !important;
+    }}
+
     .whatsapp-header {{
         position: fixed;
         top: 0;
-        left: 380px; /* Offset the sidebar width */
-        right: 0;
         height: 60px;
         background-color: #202C33;
         z-index: 999;
@@ -238,15 +253,14 @@ st.markdown(f"""
 
     /* Avatars enabled */
 
-    /* --- WHATSAPP BOTTOM INPUT WRAPPER --- */
+    /* WHATSAPP BOTTOM INPUT WRAPPER */
     [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) {{
         background-color: #202C33 !important;
         align-items: center !important;
         padding: 10px 24px !important;
+        box-sizing: border-box !important;
         position: fixed !important;
         bottom: 0px !important;
-        left: 380px !important;
-        width: calc(100% - 380px) !important;
         z-index: 1000 !important;
         height: 70px !important;
         gap: 10px !important;
@@ -284,7 +298,8 @@ st.markdown(f"""
     /* Make Mobile Responsive - Override Sidebar Fixed Width on Small Screens */
     @media (max-width: 768px) {{
         .whatsapp-header, [data-testid="stHorizontalBlock"]:has([data-testid="stChatInput"]) {{
-            left: 0 !important; /* Re-flow to full width when sidebar collapses */
+            left: 0 !important; 
+            width: 100vw !important; /* Ensure mobile also recalculates width correctly */
         }}
     }}
     
@@ -320,16 +335,12 @@ st.markdown(f"""
         to {{ opacity: 1; transform: scale(1.1); }}
     }}
 
-    /* RED LOGOUT BUTTON — Far Top Right */
     /* RED LOGOUT BUTTON — Absolute Top Right Fix */
-    div:has(> button[key="logout_trigger"]) {{
+    [data-testid="stButton"] button[kind="primary"] {{
         position: fixed !important;
-        top: 16px !important;
+        top: 14px !important;
         right: 20px !important;
-        z-index: 9999 !important;
-        width: auto !important;
-    }}
-    button[key="logout_trigger"] {{
+        z-index: 99999 !important;
         background-color: #EA4335 !important;
         color: white !important;
         border: none !important;
@@ -339,8 +350,9 @@ st.markdown(f"""
         font-weight: 700 !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
         height: 32px !important;
+        width: auto !important;
     }}
-    button[key="logout_trigger"]:hover {{ background-color: #C62828 !important; }}
+    [data-testid="stButton"] button[kind="primary"]:hover {{ background-color: #C62828 !important; }}
 </style>
 """, unsafe_allow_html=True)
 
@@ -360,40 +372,32 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # --- RED LOGOUT BUTTON (top-right, global) ---
-# We render it at the very top so it can be picked up by the fixed CSS
-if st.button("🚪 Logout", key="logout_trigger"):
-    st.session_state["show_logout_confirm"] = True
+# Define the dialog function first
+@st.dialog("Sign Out")
+def logout_dialog():
+    st.write("🚪 Are you sure you want to sign out?")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Yes, sign out", use_container_width=True):
+            from supabase import create_client
+            import os
+            try:
+                sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
+                sb.auth.sign_out()
+            except Exception:
+                pass
+            for key in ["auth_user", "auth_session", "auth_profile", "sb_access_token",
+                        "sb_refresh_token", "language_confirmed", "messages",
+                        "session_id"]:
+                st.session_state.pop(key, None)
+            st.rerun()
+    with col2:
+        if st.button("❌ Cancel", use_container_width=True):
+            st.rerun()
 
-# Logout confirmation dialog
-if st.session_state.get("show_logout_confirm"):
-    with st.container():
-        st.markdown("""
-        <div style="position:fixed;top:60px;right:16px;background:#2A3942;border-radius:12px;
-                    padding:20px 24px;z-index:2000;border:1px solid #3D4A52;
-                    box-shadow:0 4px 20px rgba(0,0,0,0.5);min-width:260px;">
-            <p style="color:#E9EDEF;margin:0 0 16px;font-size:14px;">
-                🚪 Are you sure you want to sign out?
-            </p>
-        </div>""", unsafe_allow_html=True)
-        col_yes, col_no = st.columns(2)
-        with col_yes:
-            if st.button("✅ Yes, sign out", key="confirm_logout", use_container_width=True):
-                from supabase import create_client
-                import os
-                try:
-                    sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
-                    sb.auth.sign_out()
-                except Exception:
-                    pass
-                for key in ["auth_user", "auth_session", "auth_profile", "sb_access_token",
-                            "sb_refresh_token", "language_confirmed", "messages",
-                            "session_id", "show_logout_confirm"]:
-                    st.session_state.pop(key, None)
-                st.rerun()
-        with col_no:
-            if st.button("❌ Cancel", key="cancel_logout", use_container_width=True):
-                st.session_state["show_logout_confirm"] = False
-                st.rerun()
+# Trigger the dialog when the primary button is clicked
+if st.button("🚪 Logout", key="logout_trigger", type="primary"):
+    logout_dialog()
 
 
 # --- 5. SIDEBAR (SESSION HISTORY) ---
@@ -424,10 +428,16 @@ with st.sidebar:
     else:
         st.markdown("<p style='color:#8696A0; text-align:center; padding: 20px 0;'>No history found. Start a new chat.</p>", unsafe_allow_html=True)
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
+    # Add a spacer so the chat history list doesn't get hidden behind the pinned footer
+    st.markdown("<div style='height: 100px;'></div>", unsafe_allow_html=True)
+
     # Language is locked in from the onboarding screen — display only
     confirmed_lang = st.session_state.get("selected_lang_name", "English")
-    st.markdown(f"<p style='color:#8696A0; font-size:13px; padding: 0 5px;'>🌍 Language: <strong style='color:#00A884'>{confirmed_lang}</strong></p>", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="position: absolute; bottom: 0px; left: 0px; width: 100%; text-align: center; background-color: #111B21; padding-top: 15px; padding-bottom: 25px; border-top: 1px solid #222D34; z-index: 999;">
+        <p style='color:#8696A0; font-size:13px; margin: 0;'>🌍 Language: <br> <strong style='color:#00A884'>{confirmed_lang}</strong></p>
+    </div>
+    """, unsafe_allow_html=True)
     selected_lang_name = confirmed_lang
     lang_codes = LANG_MAPPING.get(selected_lang_name, LANG_MAPPING["English"])
 
